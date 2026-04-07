@@ -577,7 +577,7 @@ pub fn main() !u8 {
             var did_receive_valid_arg = false;
             while (args.next()) |key| {
                 const value = args.next() orelse {
-                    std.log.err("Missing value for key \"{s}\"", .{ key });
+                    std.log.err("Missing default value for key \"{s}\"", .{ key });
                     return 1;
                 };
 
