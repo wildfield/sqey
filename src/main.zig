@@ -79,6 +79,26 @@ fn prepare_statement(
     return statement;
 }
 
+fn bind_text(
+    db: *c.sqlite3,
+    statement: *c.sqlite3_stmt,
+    column: i32,
+    value: []const u8, 
+) !void {
+    const result = c.sqlite3_bind_text(
+        statement,
+        column,
+        @ptrCast(value),
+        @intCast(value.len),
+        c.SQLITE_STATIC,
+    );
+
+    if (result != c.SQLITE_OK) {
+        std.log.err("Failed to bind parameter: {s}", .{ c.sqlite3_errmsg(db) });
+        return DbError.FailedToExecuteQuery;
+    }
+}
+
 const StateMachine = struct {
     current_state: State = .Initial,
     db: *c.sqlite3 = undefined,
@@ -223,18 +243,7 @@ const StateMachine = struct {
 
         switch (message) {
             .Get => |key| {
-                const failure = c.sqlite3_bind_text(
-                    self.statement,
-                    1,
-                    key,
-                    @intCast(key.len),
-                    c.SQLITE_STATIC,
-                );
-
-                if (failure != c.SQLITE_OK) {
-                    std.log.err("Failed to bind parameter: {s}", .{ c.sqlite3_errmsg(self.db) });
-                    return DbError.FailedToExecuteQuery;
-                }
+                try bind_text(self.db, self.statement, 1, key);
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
@@ -254,18 +263,7 @@ const StateMachine = struct {
                 }
             },
             .GetOrElse => |pair| {
-                const failure = c.sqlite3_bind_text(
-                    self.statement,
-                    1,
-                    pair.key,
-                    @intCast(pair.key.len),
-                    c.SQLITE_STATIC,
-                );
-
-                if (failure != c.SQLITE_OK) {
-                    std.log.err("Failed to bind parameter: {s}", .{ c.sqlite3_errmsg(self.db) });
-                    return DbError.FailedToExecuteQuery;
-                }
+                try bind_text(self.db, self.statement, 1, pair.key);
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
@@ -293,31 +291,8 @@ const StateMachine = struct {
                     }
                 }
 
-                const failure = c.sqlite3_bind_text(
-                    self.statement,
-                    1,
-                    pair.key,
-                    @intCast(pair.key.len),
-                    c.SQLITE_STATIC,
-                ); 
-
-                if (failure != c.SQLITE_OK) {
-                    std.log.err("Failed to bind parameter: {s}", .{ c.sqlite3_errmsg(self.db) });
-                    return DbError.FailedToExecuteQuery;
-                }
-
-                const failure2 = c.sqlite3_bind_text(
-                    self.statement,
-                    2,
-                    pair.value,
-                    @intCast(pair.value.len),
-                    c.SQLITE_STATIC,
-                );
-
-                if (failure2 != c.SQLITE_OK) {
-                    std.log.err("Failed to bind parameter: {s}", .{ c.sqlite3_errmsg(self.db) });
-                    return DbError.FailedToExecuteQuery;
-                }
+                try bind_text(self.db, self.statement, 1, pair.key);
+                try bind_text(self.db, self.statement, 2, pair.value);
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code != c.SQLITE_DONE) {
@@ -364,18 +339,7 @@ const StateMachine = struct {
                 self.current_state = .{ .Invalid = undefined };
             },
             .KeysLike => |pattern| {
-                const failure = c.sqlite3_bind_text(
-                    self.statement,
-                    1,
-                    pattern,
-                    @intCast(pattern.len),
-                    c.SQLITE_STATIC,
-                );
-
-                if (failure != c.SQLITE_OK) {
-                    std.log.err("Failed to bind parameter: {s}", .{ c.sqlite3_errmsg(self.db) });
-                    return DbError.FailedToExecuteQuery;
-                }
+                try bind_text(self.db, self.statement, 1, pattern);
 
                 var result_code = c.sqlite3_step(self.statement);
                 while(result_code == c.SQLITE_ROW) {
@@ -398,18 +362,7 @@ const StateMachine = struct {
                     }
                 }
 
-                const failure = c.sqlite3_bind_text(
-                    self.statement,
-                    1,
-                    key,
-                    @intCast(key.len),
-                    c.SQLITE_STATIC,
-                );
-
-                if (failure != c.SQLITE_OK) {
-                    std.log.err("Failed to bind parameter: {s}", .{ c.sqlite3_errmsg(self.db) });
-                    return DbError.FailedToExecuteQuery;
-                }
+                try bind_text(self.db, self.statement, 1, key);
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code != c.SQLITE_DONE) {
@@ -438,18 +391,7 @@ const StateMachine = struct {
                     }
                 }
 
-                const failure = c.sqlite3_bind_text(
-                    self.statement,
-                    1,
-                    key,
-                    @intCast(key.len),
-                    c.SQLITE_STATIC,
-                );
-
-                if (failure != c.SQLITE_OK) {
-                    std.log.err("Failed to bind parameter: {s}", .{ c.sqlite3_errmsg(self.db) });
-                    return DbError.FailedToExecuteQuery;
-                }
+                try bind_text(self.db, self.statement, 1, key);
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code != c.SQLITE_DONE) {
