@@ -3,7 +3,7 @@ const c = @cImport({
     @cInclude("sqlite3.h");
 });
 
-const DbError = error {
+const DbError = error{
     FailedToOpenDatabase,
     FailedToCloseDatabase,
     FailedToCreateTable,
@@ -27,7 +27,7 @@ const MessageType = enum {
 
 // Accepts either regular or sentinel-terminated slice
 fn KeyValuePair(comptime slice: type) type {
-    return struct { 
+    return struct {
         key: slice,
         value: slice,
     };
@@ -52,7 +52,7 @@ fn Message(comptime slice: type) type {
     };
 }
 
-const StateMachineError = error {
+const StateMachineError = error{
     InvalidState,
     InvalidCommand,
 };
@@ -86,7 +86,7 @@ fn prepare_statement(
         null,
     );
     if (failure != c.SQLITE_OK) {
-        std.log.err("Failed to compile statement: {s}", .{ c.sqlite3_errmsg(db) });
+        std.log.err("Failed to compile statement: {s}", .{c.sqlite3_errmsg(db)});
         return DbError.FailedToExecuteQuery;
     }
     return statement;
@@ -96,7 +96,7 @@ fn bind_text(
     db: *c.sqlite3,
     statement: *c.sqlite3_stmt,
     column: i32,
-    value: []const u8, 
+    value: []const u8,
 ) !void {
     const result = c.sqlite3_bind_text(
         statement,
@@ -107,7 +107,7 @@ fn bind_text(
     );
 
     if (result != c.SQLITE_OK) {
-        std.log.err("Failed to bind parameter: {s}", .{ c.sqlite3_errmsg(db) });
+        std.log.err("Failed to bind parameter: {s}", .{c.sqlite3_errmsg(db)});
         return DbError.FailedToExecuteQuery;
     }
 }
@@ -127,9 +127,9 @@ const StateMachine = struct {
 
         const db: *c.sqlite3 = db: {
             var db: *c.sqlite3 = undefined;
-            const failure = c.sqlite3_open(filepath, @ptrCast(&db)); 
+            const failure = c.sqlite3_open(filepath, @ptrCast(&db));
             if (failure != 0) {
-                std.log.err("Failed to open database: {s}", .{ c.sqlite3_errmsg(db) });
+                std.log.err("Failed to open database: {s}", .{c.sqlite3_errmsg(db)});
                 _ = c.sqlite3_close(db);
                 return DbError.FailedToOpenDatabase;
             }
@@ -140,10 +140,10 @@ const StateMachine = struct {
                 "CREATE TABLE IF NOT EXISTS data(id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE, value TEXT)",
                 null,
                 null,
-                @ptrCast(&error_msg), 
+                @ptrCast(&error_msg),
             );
             if (failure2 != 0) {
-                std.log.err("Failed to create table: {s}", .{ error_msg });
+                std.log.err("Failed to create table: {s}", .{error_msg});
                 c.sqlite3_free(error_msg);
                 _ = c.sqlite3_close(db);
                 return DbError.FailedToCreateTable;
@@ -160,7 +160,7 @@ const StateMachine = struct {
 
     fn process(self: *StateMachine, comptime slice: type, message: Message(slice)) !void {
         switch (self.current_state) {
-            .Initial => return StateMachineError.InvalidState, 
+            .Initial => return StateMachineError.InvalidState,
             .Closed => return StateMachineError.InvalidState,
             .Invalid => return StateMachineError.InvalidState,
             .Processing => |message_type| {
@@ -177,76 +177,76 @@ const StateMachine = struct {
                     .Get, .GetOrElse => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                                self.db, 
-                                "SELECT value FROM data WHERE key = ?",
-                            ); 
+                            self.db,
+                            "SELECT value FROM data WHERE key = ?",
+                        );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
                     },
                     .Set => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                                self.db, 
-                                "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
-                            ); 
+                            self.db,
+                            "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
+                        );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
 
                         var begin_err_msg: [:0]u8 = undefined;
                         const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, @ptrCast(&begin_err_msg));
                         if (begin_code != 0) {
-                            std.log.err("Failed to begin transaction {s}", .{ begin_err_msg });
+                            std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
                             return DbError.FailedToExecuteQuery;
                         }
                     },
                     .Keys => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                                self.db, 
-                                "SELECT key FROM data ORDER BY id",
-                            ); 
+                            self.db,
+                            "SELECT key FROM data ORDER BY id",
+                        );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
                     },
                     .KeyValues => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                                self.db, 
-                                "SELECT key, value FROM data ORDER BY id",
-                            ); 
+                            self.db,
+                            "SELECT key, value FROM data ORDER BY id",
+                        );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
                     },
                     .KeysLike => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                                self.db, 
-                                "SELECT key FROM data WHERE key LIKE ? ORDER BY id",
-                            ); 
+                            self.db,
+                            "SELECT key FROM data WHERE key LIKE ? ORDER BY id",
+                        );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
                     },
                     .Delete, .DeleteIfExists => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                                self.db, 
-                                "DELETE FROM data WHERE key = ?",
-                            ); 
+                            self.db,
+                            "DELETE FROM data WHERE key = ?",
+                        );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
 
                         var begin_err_msg: [:0]u8 = undefined;
                         const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, @ptrCast(&begin_err_msg));
                         if (begin_code != 0) {
-                            std.log.err("Failed to begin transaction {s}", .{ begin_err_msg });
+                            std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
                             return DbError.FailedToExecuteQuery;
                         }
                     },
                     .Stdin => return StateMachineError.InvalidCommand,
                 }
 
-                self.current_state =  .{ .Processing = message };
-            }
+                self.current_state = .{ .Processing = message };
+            },
         }
 
         errdefer {
@@ -260,18 +260,18 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}\n", .{ c.sqlite3_column_text(self.statement, 0) });
+                    _ = try self.stdout.print("{s}\n", .{c.sqlite3_column_text(self.statement, 0)});
                 } else if (result_code == c.SQLITE_DONE) {
-                    std.log.err("No value found for key \"{s}\"", .{ key });
+                    std.log.err("No value found for key \"{s}\"", .{key});
                     return DbError.FailedToGetKey;
                 } else {
-                    std.log.err("Failed to read row: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to read row: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
 
                 const failure2 = c.sqlite3_reset(self.statement);
                 if (failure2 != c.SQLITE_OK) {
-                    std.log.err("Failed to reset: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
             },
@@ -280,18 +280,18 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}\n", .{ c.sqlite3_column_text(self.statement, 0) });
+                    _ = try self.stdout.print("{s}\n", .{c.sqlite3_column_text(self.statement, 0)});
                 } else if (result_code == c.SQLITE_DONE) {
                     _ = try self.stdout.write(pair.value);
                     _ = try self.stdout.write("\n");
                 } else {
-                    std.log.err("Failed to read row: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to read row: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
 
                 const failure2 = c.sqlite3_reset(self.statement);
                 if (failure2 != c.SQLITE_OK) {
-                    std.log.err("Failed to reset: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
             },
@@ -300,7 +300,7 @@ const StateMachine = struct {
                     var end_err_msg: [:0]u8 = undefined;
                     const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, @ptrCast(&end_err_msg));
                     if (end_code != 0) {
-                        std.log.err("Failed to rollback transaction {s}", .{ end_err_msg });
+                        std.log.err("Failed to rollback transaction {s}", .{end_err_msg});
                     }
                 }
 
@@ -309,26 +309,26 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code != c.SQLITE_DONE) {
-                    std.log.err("Failed to insert row: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to insert row: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
 
                 const failure3 = c.sqlite3_reset(self.statement);
                 if (failure3 != c.SQLITE_OK) {
-                    std.log.err("Failed to reset: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
             },
             .Keys => {
                 var result_code = c.sqlite3_step(self.statement);
-                while(result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}\n", .{ c.sqlite3_column_text(self.statement, 0) });
+                while (result_code == c.SQLITE_ROW) {
+                    _ = try self.stdout.print("{s}\n", .{c.sqlite3_column_text(self.statement, 0)});
 
                     result_code = c.sqlite3_step(self.statement);
                 }
 
                 if (result_code != c.SQLITE_DONE) {
-                    std.log.err("Failed to list keys: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to list keys: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
 
@@ -337,14 +337,14 @@ const StateMachine = struct {
             },
             .KeyValues => {
                 var result_code = c.sqlite3_step(self.statement);
-                while(result_code == c.SQLITE_ROW) {
+                while (result_code == c.SQLITE_ROW) {
                     _ = try self.stdout.print("{s}={s}\n", .{ c.sqlite3_column_text(self.statement, 0), c.sqlite3_column_text(self.statement, 1) });
 
                     result_code = c.sqlite3_step(self.statement);
                 }
 
                 if (result_code != c.SQLITE_DONE) {
-                    std.log.err("Failed to list keys: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to list keys: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
 
@@ -355,14 +355,14 @@ const StateMachine = struct {
                 try bind_text(self.db, self.statement, 1, pattern);
 
                 var result_code = c.sqlite3_step(self.statement);
-                while(result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}\n", .{ c.sqlite3_column_text(self.statement, 0) });
+                while (result_code == c.SQLITE_ROW) {
+                    _ = try self.stdout.print("{s}\n", .{c.sqlite3_column_text(self.statement, 0)});
 
                     result_code = c.sqlite3_step(self.statement);
                 }
 
                 if (result_code != c.SQLITE_DONE) {
-                    std.log.err("Failed to list keys: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to list keys: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
             },
@@ -371,7 +371,7 @@ const StateMachine = struct {
                     var end_err_msg: [:0]u8 = undefined;
                     const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, @ptrCast(&end_err_msg));
                     if (end_code != 0) {
-                        std.log.err("Failed to rollback transaction {s}", .{ end_err_msg });
+                        std.log.err("Failed to rollback transaction {s}", .{end_err_msg});
                     }
                 }
 
@@ -379,19 +379,19 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code != c.SQLITE_DONE) {
-                    std.log.err("Failed to delete row: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to delete row: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
 
                 const row_count = c.sqlite3_changes64(self.db);
                 if (row_count == 0) {
-                    std.log.err("Failed to delete entry. Key not found: \"{s}\"", .{ key });
+                    std.log.err("Failed to delete entry. Key not found: \"{s}\"", .{key});
                     return DbError.FailedToDeleteKey;
                 }
 
                 const failure2 = c.sqlite3_reset(self.statement);
                 if (failure2 != c.SQLITE_OK) {
-                    std.log.err("Failed to reset: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
             },
@@ -400,7 +400,7 @@ const StateMachine = struct {
                     var end_err_msg: [:0]u8 = undefined;
                     const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, @ptrCast(&end_err_msg));
                     if (end_code != 0) {
-                        std.log.err("Failed to rollback transaction {s}", .{ end_err_msg });
+                        std.log.err("Failed to rollback transaction {s}", .{end_err_msg});
                     }
                 }
 
@@ -408,13 +408,13 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code != c.SQLITE_DONE) {
-                    std.log.err("Failed to delete row: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to delete row: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
 
                 const failure2 = c.sqlite3_reset(self.statement);
                 if (failure2 != c.SQLITE_OK) {
-                    std.log.err("Failed to reset: {s}", .{ c.sqlite3_errmsg(self.db) });
+                    std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
             },
@@ -439,7 +439,7 @@ const StateMachine = struct {
                         var end_err_msg: [:0]u8 = undefined;
                         const end_code = c.sqlite3_exec(self.db, "END TRANSACTION", null, null, @ptrCast(&end_err_msg));
                         if (end_code != 0) {
-                            std.log.err("Failed to end transaction {s}", .{ end_err_msg });
+                            std.log.err("Failed to end transaction {s}", .{end_err_msg});
                         }
 
                         _ = c.sqlite3_finalize(self.statement);
@@ -477,21 +477,21 @@ const DelimiterIterator = struct {
     fn next(self: *DelimiterIterator) !?[]const u8 {
         if (self.is_done) return null;
         const result = self.reader.takeDelimiterInclusive(self.delimiter) catch |err| {
-            switch(err) {
+            switch (err) {
                 std.Io.Reader.DelimiterError.EndOfStream => {
                     self.is_done = true;
                     return null;
                 },
                 else => {
                     return err;
-                }
+                },
             }
         };
         if (result.len == 0) {
             self.is_done = true;
             return null;
         } else {
-            return result[0..result.len - 1];
+            return result[0 .. result.len - 1];
         }
     }
 };
@@ -530,16 +530,16 @@ pub fn main() !u8 {
     };
 
     return try processArgs(
-        wrapper, 
-        filepath, 
-        false, 
+        wrapper,
+        filepath,
+        false,
         &state_machine,
     );
 }
 
 pub fn processArgs(
-    args: anytype, 
-    filepath: [:0]const u8, 
+    args: anytype,
+    filepath: [:0]const u8,
     is_stdin: bool,
     state_machine: *StateMachine,
 ) !u8 {
@@ -596,7 +596,7 @@ pub fn processArgs(
             var did_receive_valid_arg = false;
             while (try args.next()) |key| {
                 const value = try args.next() orelse {
-                    std.log.err("Missing default value for key \"{s}\"", .{ key });
+                    std.log.err("Missing default value for key \"{s}\"", .{key});
                     return 1;
                 };
 
@@ -605,7 +605,7 @@ pub fn processArgs(
                     try state_machine.open(filepath);
                 }
 
-                try state_machine.process(@TypeOf(key), .{ .GetOrElse = .{ .key = key, .value = value }});
+                try state_machine.process(@TypeOf(key), .{ .GetOrElse = .{ .key = key, .value = value } });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else command", .{});
@@ -616,7 +616,7 @@ pub fn processArgs(
             var did_receive_valid_arg = false;
             while (try args.next()) |key| {
                 const value = try args.next() orelse {
-                    std.log.err("Missing value for key \"{s}\"", .{ key });
+                    std.log.err("Missing value for key \"{s}\"", .{key});
                     return 1;
                 };
 
@@ -625,7 +625,7 @@ pub fn processArgs(
                     try state_machine.open(filepath);
                 }
 
-                try state_machine.process(@TypeOf(key), .{ .Set = .{ .key = key, .value = value }});
+                try state_machine.process(@TypeOf(key), .{ .Set = .{ .key = key, .value = value } });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for set command", .{});
@@ -714,7 +714,7 @@ pub fn processArgs(
                 std.log.err("Processing stdin from stdin", .{});
                 return 1;
             }
-        }
+        },
     }
 
     return 0;
