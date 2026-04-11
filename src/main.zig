@@ -136,7 +136,7 @@ const StateMachine = struct {
     stdout_writer: *std.fs.File.Writer = undefined,
     statement: *c.sqlite3_stmt = undefined,
 
-    fn open(self: *StateMachine, filepath: [:0]const u8) !void {
+    fn open(self: *StateMachine, filepath: [:0]const u8, allow_create: bool) !void {
         if (self.current_state != .Initial) {
             return StateMachineError.InvalidState;
         }
@@ -144,9 +144,14 @@ const StateMachine = struct {
 
         const db: *c.sqlite3 = db: {
             var db: *c.sqlite3 = undefined;
-            const failure = c.sqlite3_open(filepath, @ptrCast(&db));
+            var flags: c_int = c.SQLITE_OPEN_READWRITE;
+            if (allow_create) {
+                flags |= c.SQLITE_OPEN_CREATE;
+            }
+            const failure = c.sqlite3_open_v2(filepath, @ptrCast(&db), flags, null);
             if (failure != 0) {
                 std.log.err("Failed to open database: {s}", .{c.sqlite3_errmsg(db)});
+                std.log.err("Hint: Database must first created when using a \"set\" command if it doesn't exist.", .{});
                 _ = c.sqlite3_close(db);
                 return DbError.FailedToOpenDatabase;
             }
@@ -637,7 +642,7 @@ pub fn processArgs(
             while (try args.next()) |key| {
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
-                    try state_machine.open(filepath);
+                    try state_machine.open(filepath, false);
                 }
 
                 try state_machine.process(hasSentinel(@TypeOf(key)), .{ .Get = key });
@@ -657,7 +662,7 @@ pub fn processArgs(
 
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
-                    try state_machine.open(filepath);
+                    try state_machine.open(filepath, false);
                 }
 
                 try state_machine.process(hasSentinel(@TypeOf(key)), .{ .GetOrElse = .{ .key = key, .value = value } });
@@ -677,7 +682,7 @@ pub fn processArgs(
 
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
-                    try state_machine.open(filepath);
+                    try state_machine.open(filepath, true);
                 }
 
                 try state_machine.process(hasSentinel(@TypeOf(key)), .{ .Set = .{ .key = key, .value = value } });
@@ -693,7 +698,7 @@ pub fn processArgs(
                 return 1;
             }
 
-            try state_machine.open(filepath);
+            try state_machine.open(filepath, false);
             try state_machine.process(true, .{ .Keys = undefined });
         },
         .KeyValues => {
@@ -702,7 +707,7 @@ pub fn processArgs(
                 return 1;
             }
 
-            try state_machine.open(filepath);
+            try state_machine.open(filepath, false);
             try state_machine.process(true, .{ .KeyValues = undefined });
         },
         .KeysLike => {
@@ -716,7 +721,7 @@ pub fn processArgs(
                 return 1;
             }
 
-            try state_machine.open(filepath);
+            try state_machine.open(filepath, false);
             try state_machine.process(hasSentinel(@TypeOf(pattern)), .{ .KeysLike = pattern });
         },
         .Delete => {
@@ -724,7 +729,7 @@ pub fn processArgs(
             while (try args.next()) |key| {
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
-                    try state_machine.open(filepath);
+                    try state_machine.open(filepath, false);
                 }
 
                 try state_machine.process(hasSentinel(@TypeOf(key)), .{ .Delete = key });
@@ -739,7 +744,7 @@ pub fn processArgs(
             while (try args.next()) |key| {
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
-                    try state_machine.open(filepath);
+                    try state_machine.open(filepath, false);
                 }
 
                 try state_machine.process(hasSentinel(@TypeOf(key)), .{ .DeleteIfExists = key });
