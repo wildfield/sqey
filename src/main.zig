@@ -565,7 +565,46 @@ pub fn main() !u8 {
         false,
         &state_machine,
         delimiter,
+        null,
     );
+}
+
+const CommandError = error {
+    InvalidCommand,
+};
+
+pub fn parseCommand(
+    comptime has_sentinel: bool,
+    str: OptionallySentinelSlice(has_sentinel),
+    is_stdin: bool,
+) !MessageType {
+    return if (std.mem.eql(u8, str, "get")) {
+        return MessageType.Get;
+    } else if (std.mem.eql(u8, str, "get-or-else")) {
+        return MessageType.GetOrElse;
+    } else if (std.mem.eql(u8, str, "set")) {
+        return MessageType.Set;
+    } else if (std.mem.eql(u8, str, "keys")) {
+        return MessageType.Keys;
+    } else if (std.mem.eql(u8, str, "key-values")) {
+        return MessageType.KeyValues;
+    } else if (std.mem.eql(u8, str, "keys-like")) {
+        return MessageType.KeysLike;
+    } else if (std.mem.eql(u8, str, "delete")) {
+        return MessageType.Delete;
+    } else if (std.mem.eql(u8, str, "delete-if-exists")) {
+        return MessageType.DeleteIfExists;
+    } else if (std.mem.eql(u8, str, "stdin")) {
+        if (is_stdin) {
+            std.log.err("Cannot process \"stdin\" while already reading from stdin", .{});
+            return CommandError.InvalidCommand;
+        } else {
+            return MessageType.Stdin;
+        }
+    } else {
+        std.log.err("Unknown command. Possible commands: get, get-or-else, set, keys, key-values, keys-like, delete, delete-if-exists, stdin", .{});
+        return CommandError.InvalidCommand;
+    };
 }
 
 pub fn processArgs(
@@ -574,38 +613,16 @@ pub fn processArgs(
     is_stdin: bool,
     state_machine: *StateMachine,
     delimiter: u8,
+    trailing_message: ?[:0]const u8,
 ) !u8 {
-    const command_str = try args.next() orelse {
-        std.log.err(usage, .{});
-        return 1;
-    };
-
-    const command = if (std.mem.eql(u8, command_str, "get")) result: {
-        break :result MessageType.Get;
-    } else if (std.mem.eql(u8, command_str, "get-or-else")) result: {
-        break :result MessageType.GetOrElse;
-    } else if (std.mem.eql(u8, command_str, "set")) result: {
-        break :result MessageType.Set;
-    } else if (std.mem.eql(u8, command_str, "keys")) result: {
-        break :result MessageType.Keys;
-    } else if (std.mem.eql(u8, command_str, "key-values")) result: {
-        break :result MessageType.KeyValues;
-    } else if (std.mem.eql(u8, command_str, "keys-like")) result: {
-        break :result MessageType.KeysLike;
-    } else if (std.mem.eql(u8, command_str, "delete")) result: {
-        break :result MessageType.Delete;
-    } else if (std.mem.eql(u8, command_str, "delete-if-exists")) result: {
-        break :result MessageType.DeleteIfExists;
-    } else if (std.mem.eql(u8, command_str, "stdin")) result: {
-        if (is_stdin) {
-            std.log.err("Cannot process \"stdin\" while already reading from stdin", .{});
+    const command = if (trailing_message) |message| command: {
+        break :command try parseCommand(true, message, is_stdin);
+    } else command: {
+        const command_str = try args.next() orelse {
+            std.log.err(usage, .{});
             return 1;
-        } else {
-            break :result MessageType.Stdin;
-        }
-    } else {
-        std.log.err("Unknown command. Possible commands: get, get-or-else, set, keys, key-values, keys-like, delete, delete-if-exists, stdin", .{});
-        return 1;
+        };
+        break :command try parseCommand(hasSentinel(@TypeOf(command_str)), command_str, is_stdin);
     };
 
     switch (command) {
@@ -727,8 +744,18 @@ pub fn processArgs(
             }
         },
         .Stdin => {
+            var trailing_message_arg: ?[:0]const u8 = null;
+            if (try args.next()) |arg| {
+                if (comptime hasSentinel(@TypeOf(arg))) {
+                    trailing_message_arg = arg;
+                } else {
+                    std.log.err("\"stdin\" extra command in stdin", .{});
+                    return 1;
+                }
+            }
+
             if (try args.next()) |_| {
-                std.log.err("\"stdin\" command doesn't accept extra arguments", .{});
+                std.log.err("\"stdin\" command doesn't accept extra arguments after command", .{});
                 return 1;
             }
 
@@ -741,7 +768,7 @@ pub fn processArgs(
                     .reader = stdin,
                     .delimiter = delimiter,
                 };
-                return try processArgs(&iterator, filepath, true, state_machine, delimiter);
+                return try processArgs(&iterator, filepath, true, state_machine, delimiter, trailing_message_arg);
             } else {
                 std.log.err("Processing stdin from stdin", .{});
                 return 1;
