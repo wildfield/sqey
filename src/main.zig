@@ -33,11 +33,6 @@ fn KeyValuePair(comptime slice: type) type {
     };
 }
 
-// const KeyValuePair = struct {
-//     key: [:0]const u8,
-//     value: [:0]const u8,
-// };
-
 fn Message(comptime slice: type) type {
     return union(MessageType) {
         Get: slice,
