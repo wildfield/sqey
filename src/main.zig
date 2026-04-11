@@ -131,6 +131,7 @@ fn bind_text(
 const StateMachine = struct {
     current_state: State = .Initial,
     stdout: *std.Io.Writer,
+    delimiter: u8,
     db: *c.sqlite3 = undefined,
     stdout_writer: *std.fs.File.Writer = undefined,
     statement: *c.sqlite3_stmt = undefined,
@@ -276,7 +277,7 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}\n", .{c.sqlite3_column_text(self.statement, 0)});
+                    _ = try self.stdout.print("{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter });
                 } else if (result_code == c.SQLITE_DONE) {
                     std.log.err("No value found for key \"{s}\"", .{key});
                     return DbError.FailedToGetKey;
@@ -296,10 +297,9 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}\n", .{c.sqlite3_column_text(self.statement, 0)});
+                    _ = try self.stdout.print("{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter });
                 } else if (result_code == c.SQLITE_DONE) {
-                    _ = try self.stdout.write(pair.value);
-                    _ = try self.stdout.write("\n");
+                    _ = try self.stdout.print("{s}{c}", .{ pair.value, self.delimiter });
                 } else {
                     std.log.err("Failed to read row: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
@@ -338,7 +338,7 @@ const StateMachine = struct {
             .Keys => {
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}\n", .{c.sqlite3_column_text(self.statement, 0)});
+                    _ = try self.stdout.print("{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter });
 
                     result_code = c.sqlite3_step(self.statement);
                 }
@@ -354,7 +354,7 @@ const StateMachine = struct {
             .KeyValues => {
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}\n{s}\n", .{ c.sqlite3_column_text(self.statement, 0), c.sqlite3_column_text(self.statement, 1) });
+                    _ = try self.stdout.print("{s}{c}{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter, c.sqlite3_column_text(self.statement, 1), self.delimiter });
 
                     result_code = c.sqlite3_step(self.statement);
                 }
@@ -372,7 +372,7 @@ const StateMachine = struct {
 
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}\n", .{c.sqlite3_column_text(self.statement, 0)});
+                    _ = try self.stdout.print("{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter });
 
                     result_code = c.sqlite3_step(self.statement);
                 }
@@ -518,9 +518,20 @@ pub fn main() !u8 {
     var args = std.process.args();
     _ = args.skip();
 
-    const filepath = args.next() orelse {
-        std.log.err(usage, .{});
-        return 1;
+    var delimiter: u8 = '\n';
+    const filepath = filepath: {
+        var filepath = args.next() orelse {
+            std.log.err(usage, .{});
+            return 1;
+        };
+        if (std.mem.eql(u8, filepath, "-0")) {
+            delimiter = 0;
+            filepath = args.next() orelse {
+                std.log.err(usage, .{});
+                return 1;
+            };
+        }
+        break :filepath filepath;
     };
 
     if (std.mem.eql(u8, filepath, "help") or std.mem.eql(u8, filepath, "--help")) {
@@ -538,7 +549,10 @@ pub fn main() !u8 {
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &stdout_writer.interface;
 
-    var state_machine: StateMachine = .{ .stdout = stdout };
+    var state_machine: StateMachine = .{
+        .stdout = stdout,
+        .delimiter = delimiter,
+    };
     defer state_machine.close();
 
     const wrapper: ArgIteratorWrapper = .{
@@ -550,6 +564,7 @@ pub fn main() !u8 {
         filepath,
         false,
         &state_machine,
+        delimiter,
     );
 }
 
@@ -558,6 +573,7 @@ pub fn processArgs(
     filepath: [:0]const u8,
     is_stdin: bool,
     state_machine: *StateMachine,
+    delimiter: u8,
 ) !u8 {
     const command_str = try args.next() orelse {
         std.log.err(usage, .{});
@@ -723,9 +739,9 @@ pub fn processArgs(
 
                 var iterator: DelimiterIterator = .{
                     .reader = stdin,
-                    .delimiter = '\n',
+                    .delimiter = delimiter,
                 };
-                return try processArgs(&iterator, filepath, true, state_machine);
+                return try processArgs(&iterator, filepath, true, state_machine, delimiter);
             } else {
                 std.log.err("Processing stdin from stdin", .{});
                 return 1;
