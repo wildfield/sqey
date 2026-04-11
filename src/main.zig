@@ -512,7 +512,7 @@ const DelimiterIterator = struct {
     }
 };
 
-const usage = "Usage: sqey db_filepath command command_args*";
+const usage = "Usage: sqey [-0] db_filepath command command_args*";
 
 pub fn main() !u8 {
     var args = std.process.args();
@@ -537,7 +537,7 @@ pub fn main() !u8 {
     if (std.mem.eql(u8, filepath, "help") or std.mem.eql(u8, filepath, "--help")) {
         const help =
             \\
-            \\Usage: sqey <path to the sqlite database> <command> <one or more command arguments>
+            \\Usage: sqey <optional -0> <path to the sqlite database> <command> <one or more command arguments>
             \\Available commands: get, get-or-else, set, keys, key-values, keys-like, delete, delete-if-exists, stdin
             \\Example: sqey mydb.db set key1 value1 key2 value2 && sqey mydb.db get key1 key2
         ;
