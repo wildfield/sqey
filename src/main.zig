@@ -491,28 +491,29 @@ const DelimiterIterator = struct {
     is_done: bool = false,
 
     fn next(self: *DelimiterIterator) !?[]const u8 {
-        if (self.is_done) return null;
-        const result = self.reader.takeDelimiterInclusive(self.delimiter) catch |err| {
-            switch (err) {
-                std.Io.Reader.DelimiterError.EndOfStream => {
-                    self.is_done = true;
-                    const leftover = self.reader.buffered();
-                    if (leftover.len == 0) {
-                        return null;
-                    } else {
-                        return leftover;
-                    }
-                },
-                else => {
-                    return err;
-                },
+        while(true) {
+            if (self.is_done) return null;
+            const result = self.reader.takeDelimiterInclusive(self.delimiter) catch |err| {
+                switch (err) {
+                    std.Io.Reader.DelimiterError.EndOfStream => {
+                        self.is_done = true;
+                        const leftover = self.reader.buffered();
+                        if (leftover.len == 0) {
+                            return null;
+                        } else {
+                            return leftover;
+                        }
+                    },
+                    else => {
+                        return err;
+                    },
+                }
+            };
+            if (result.len <= 1) {
+                // Skip to the next iteration
+            } else {
+                return result[0 .. result.len - 1];
             }
-        };
-        if (result.len == 0) {
-            self.is_done = true;
-            return null;
-        } else {
-            return result[0 .. result.len - 1];
         }
     }
 };
