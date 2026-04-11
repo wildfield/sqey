@@ -354,7 +354,7 @@ const StateMachine = struct {
             .KeyValues => {
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}={s}\n", .{ c.sqlite3_column_text(self.statement, 0), c.sqlite3_column_text(self.statement, 1) });
+                    _ = try self.stdout.print("{s}\n{s}\n", .{ c.sqlite3_column_text(self.statement, 0), c.sqlite3_column_text(self.statement, 1) });
 
                     result_code = c.sqlite3_step(self.statement);
                 }
