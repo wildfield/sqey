@@ -496,7 +496,12 @@ const DelimiterIterator = struct {
             switch (err) {
                 std.Io.Reader.DelimiterError.EndOfStream => {
                     self.is_done = true;
-                    return null;
+                    const leftover = self.reader.buffered();
+                    if (leftover.len == 0) {
+                        return null;
+                    } else {
+                        return leftover;
+                    }
                 },
                 else => {
                     return err;
