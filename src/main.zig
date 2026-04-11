@@ -25,24 +25,45 @@ const MessageType = enum {
     Stdin,
 };
 
+fn OptionallySentinelSlice(comptime has_sentinel: bool) type {
+    if (has_sentinel) {
+        return [:0]const u8;
+    } else {
+        return []const u8;
+    }
+}
+
+fn hasSentinel(comptime T: type) bool {
+    switch (@typeInfo(T)) {
+        .pointer => |info| {
+            if (std.builtin.Type.Pointer.sentinel(info)) |_| {
+                return true;
+            } else {
+                return false;
+            }
+        },
+        else => @compileError("Not a slice/pointer"),
+    }
+}
+
 // Accepts either regular or sentinel-terminated slice
-fn KeyValuePair(comptime slice: type) type {
+fn KeyValuePair(comptime has_sentinel: bool) type {
     return struct {
-        key: slice,
-        value: slice,
+        key: OptionallySentinelSlice(has_sentinel),
+        value: OptionallySentinelSlice(has_sentinel),
     };
 }
 
-fn Message(comptime slice: type) type {
+fn Message(comptime has_sentinel: bool) type {
     return union(MessageType) {
-        Get: slice,
-        GetOrElse: KeyValuePair(slice),
-        Set: KeyValuePair(slice),
+        Get: OptionallySentinelSlice(has_sentinel),
+        GetOrElse: KeyValuePair(has_sentinel),
+        Set: KeyValuePair(has_sentinel),
         Keys: void,
         KeyValues: void,
-        KeysLike: slice,
-        Delete: slice,
-        DeleteIfExists: slice,
+        KeysLike: OptionallySentinelSlice(has_sentinel),
+        Delete: OptionallySentinelSlice(has_sentinel),
+        DeleteIfExists: OptionallySentinelSlice(has_sentinel),
         Stdin: void,
     };
 }
@@ -153,7 +174,7 @@ const StateMachine = struct {
         self.current_state = .{ .DatabaseOpen = undefined };
     }
 
-    fn process(self: *StateMachine, comptime slice: type, message: Message(slice)) !void {
+    fn process(self: *StateMachine, comptime has_sentinel: bool, message: Message(has_sentinel)) !void {
         switch (self.current_state) {
             .Initial => return StateMachineError.InvalidState,
             .Closed => return StateMachineError.InvalidState,
@@ -580,7 +601,7 @@ pub fn processArgs(
                     try state_machine.open(filepath);
                 }
 
-                try state_machine.process(@TypeOf(key), .{ .Get = key });
+                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .Get = key });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for get command", .{});
@@ -600,7 +621,7 @@ pub fn processArgs(
                     try state_machine.open(filepath);
                 }
 
-                try state_machine.process(@TypeOf(key), .{ .GetOrElse = .{ .key = key, .value = value } });
+                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .GetOrElse = .{ .key = key, .value = value } });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else command", .{});
@@ -620,7 +641,7 @@ pub fn processArgs(
                     try state_machine.open(filepath);
                 }
 
-                try state_machine.process(@TypeOf(key), .{ .Set = .{ .key = key, .value = value } });
+                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .Set = .{ .key = key, .value = value } });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for set command", .{});
@@ -634,7 +655,7 @@ pub fn processArgs(
             }
 
             try state_machine.open(filepath);
-            try state_machine.process([]const u8, .{ .Keys = undefined });
+            try state_machine.process(true, .{ .Keys = undefined });
         },
         .KeyValues => {
             if (try args.next()) |_| {
@@ -643,7 +664,7 @@ pub fn processArgs(
             }
 
             try state_machine.open(filepath);
-            try state_machine.process([]const u8, .{ .KeyValues = undefined });
+            try state_machine.process(true, .{ .KeyValues = undefined });
         },
         .KeysLike => {
             const pattern = try args.next() orelse {
@@ -657,7 +678,7 @@ pub fn processArgs(
             }
 
             try state_machine.open(filepath);
-            try state_machine.process(@TypeOf(pattern), .{ .KeysLike = pattern });
+            try state_machine.process(hasSentinel(@TypeOf(pattern)), .{ .KeysLike = pattern });
         },
         .Delete => {
             var did_receive_valid_arg = false;
@@ -667,7 +688,7 @@ pub fn processArgs(
                     try state_machine.open(filepath);
                 }
 
-                try state_machine.process(@TypeOf(key), .{ .Delete = key });
+                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .Delete = key });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for delete command", .{});
@@ -682,7 +703,7 @@ pub fn processArgs(
                     try state_machine.open(filepath);
                 }
 
-                try state_machine.process(@TypeOf(key), .{ .DeleteIfExists = key });
+                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .DeleteIfExists = key });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for \"delete-if-exists\" command", .{});
