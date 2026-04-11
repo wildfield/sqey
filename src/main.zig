@@ -766,7 +766,7 @@ pub fn processArgs(
             }
 
             if (!is_stdin) {
-                var stdin_buffer: [4096]u8 = undefined;
+                var stdin_buffer: [1024*16]u8 = undefined;
                 var stdin_reader = std.fs.File.stdin().reader(&stdin_buffer);
                 const stdin = &stdin_reader.interface;
 
