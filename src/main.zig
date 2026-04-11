@@ -151,7 +151,7 @@ const StateMachine = struct {
             const failure = c.sqlite3_open_v2(filepath, @ptrCast(&db), flags, null);
             if (failure != 0) {
                 std.log.err("Failed to open database: {s}", .{c.sqlite3_errmsg(db)});
-                std.log.err("Hint: Database must first created when using a \"set\" command if it doesn't exist.", .{});
+                std.log.err("Hint: Database must first be created when using a \"set\" command if it doesn't exist.", .{});
                 _ = c.sqlite3_close(db);
                 return DbError.FailedToOpenDatabase;
             }
