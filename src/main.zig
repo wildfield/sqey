@@ -662,7 +662,7 @@ pub fn processArgs(
 
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
-                    try state_machine.open(filepath, false);
+                    try state_machine.open(filepath, true);
                 }
 
                 try state_machine.process(hasSentinel(@TypeOf(key)), .{ .GetOrElse = .{ .key = key, .value = value } });
@@ -698,7 +698,7 @@ pub fn processArgs(
                 return 1;
             }
 
-            try state_machine.open(filepath, false);
+            try state_machine.open(filepath, true);
             try state_machine.process(true, .{ .Keys = undefined });
         },
         .KeyValues => {
@@ -707,7 +707,7 @@ pub fn processArgs(
                 return 1;
             }
 
-            try state_machine.open(filepath, false);
+            try state_machine.open(filepath, true);
             try state_machine.process(true, .{ .KeyValues = undefined });
         },
         .KeysLike => {
@@ -721,7 +721,7 @@ pub fn processArgs(
                 return 1;
             }
 
-            try state_machine.open(filepath, false);
+            try state_machine.open(filepath, true);
             try state_machine.process(hasSentinel(@TypeOf(pattern)), .{ .KeysLike = pattern });
         },
         .Delete => {
@@ -744,7 +744,7 @@ pub fn processArgs(
             while (try args.next()) |key| {
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
-                    try state_machine.open(filepath, false);
+                    try state_machine.open(filepath, true);
                 }
 
                 try state_machine.process(hasSentinel(@TypeOf(key)), .{ .DeleteIfExists = key });
