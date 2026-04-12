@@ -16,6 +16,7 @@ const DbError = error{
 const MessageType = enum {
     Get,
     GetOrElse,
+    GetOrElseSet,
     Set,
     Keys,
     KeyValues,
@@ -58,6 +59,7 @@ fn Message(comptime has_sentinel: bool) type {
     return union(MessageType) {
         Get: OptionallySentinelSlice(has_sentinel),
         GetOrElse: KeyValuePair(has_sentinel),
+        GetOrElseSet: KeyValuePair(has_sentinel),
         Set: KeyValuePair(has_sentinel),
         Keys: void,
         KeyValues: void,
@@ -135,6 +137,8 @@ const StateMachine = struct {
     db: *c.sqlite3 = undefined,
     stdout_writer: *std.fs.File.Writer = undefined,
     statement: *c.sqlite3_stmt = undefined,
+    // GetOrElseSet uses 2 statements
+    extra_statement: *c.sqlite3_stmt = undefined,
 
     fn open(self: *StateMachine, filepath: [:0]const u8, allow_create: bool) !void {
         if (self.current_state != .Initial) {
@@ -204,6 +208,30 @@ const StateMachine = struct {
                         );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
+                    },
+                    .GetOrElseSet => {
+                        const statement: *c.sqlite3_stmt =
+                            try prepare_statement(
+                            self.db,
+                            "SELECT value FROM data WHERE key = ?",
+                        );
+                        errdefer _ = c.sqlite3_finalize(statement);
+                        self.statement = statement;
+
+                        const extra_statement: *c.sqlite3_stmt =
+                            try prepare_statement(
+                            self.db,
+                            "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
+                        );
+                        errdefer _ = c.sqlite3_finalize(extra_statement);
+                        self.extra_statement = extra_statement;
+
+                        var begin_err_msg: [:0]u8 = undefined;
+                        const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, @ptrCast(&begin_err_msg));
+                        if (begin_code != 0) {
+                            std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
+                            return DbError.FailedToExecuteQuery;
+                        }
                     },
                     .Set => {
                         const statement: *c.sqlite3_stmt =
@@ -312,6 +340,50 @@ const StateMachine = struct {
 
                 const failure2 = c.sqlite3_reset(self.statement);
                 if (failure2 != c.SQLITE_OK) {
+                    std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(self.db)});
+                    return DbError.FailedToExecuteQuery;
+                }
+            },
+            .GetOrElseSet => |pair| {
+                errdefer {
+                    _ = c.sqlite3_finalize(self.extra_statement);
+
+                    var end_err_msg: [:0]u8 = undefined;
+                    const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, @ptrCast(&end_err_msg));
+                    if (end_code != 0) {
+                        std.log.err("Failed to rollback transaction {s}", .{end_err_msg});
+                    }
+                }
+
+                try bind_text(self.db, self.statement, 1, pair.key);
+
+                const result_code = c.sqlite3_step(self.statement);
+                if (result_code == c.SQLITE_ROW) {
+                    _ = try self.stdout.print("{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter });
+                } else if (result_code == c.SQLITE_DONE) {
+                    _ = try self.stdout.print("{s}{c}", .{ pair.value, self.delimiter });
+
+                    try bind_text(self.db, self.extra_statement, 1, pair.key);
+                    try bind_text(self.db, self.extra_statement, 2, pair.value);
+                    const extra_result_code = c.sqlite3_step(self.extra_statement);
+
+                    if (extra_result_code != c.SQLITE_DONE) {
+                        std.log.err("Failed to insert row: {s}", .{c.sqlite3_errmsg(self.db)});
+                        return DbError.FailedToExecuteQuery;
+                    }
+
+                    const extra_reset_code = c.sqlite3_reset(self.extra_statement);
+                    if (extra_reset_code != c.SQLITE_OK) {
+                        std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(self.db)});
+                        return DbError.FailedToExecuteQuery;
+                    }
+                } else {
+                    std.log.err("Failed to read row: {s}", .{c.sqlite3_errmsg(self.db)});
+                    return DbError.FailedToExecuteQuery;
+                }
+
+                const reset_code = c.sqlite3_reset(self.statement);
+                if (reset_code != c.SQLITE_OK) {
                     std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
@@ -465,6 +537,16 @@ const StateMachine = struct {
 
                         _ = c.sqlite3_finalize(self.statement);
                     },
+                    .GetOrElseSet => {
+                        var end_err_msg: [:0]u8 = undefined;
+                        const end_code = c.sqlite3_exec(self.db, "END TRANSACTION", null, null, @ptrCast(&end_err_msg));
+                        if (end_code != 0) {
+                            std.log.err("Failed to end transaction {s}", .{end_err_msg});
+                        }
+
+                        _ = c.sqlite3_finalize(self.statement);
+                        _ = c.sqlite3_finalize(self.extra_statement);
+                    },
                     .Get, .GetOrElse, .Keys, .KeyValues, .KeysLike => {
                         _ = c.sqlite3_finalize(self.statement);
                     },
@@ -549,7 +631,7 @@ pub fn main() !u8 {
         const help =
             \\
             \\Usage: sqey <optional -0> <path to the sqlite database> <command> <one or more command arguments>
-            \\Available commands: get, get-or-else, set, keys, key-values, keys-like, delete, delete-if-exists, stdin
+            \\Available commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin
             \\Example: sqey mydb.db set key1 value1 key2 value2 && sqey mydb.db get key1 key2
         ;
         std.log.info(help, .{});
@@ -593,6 +675,8 @@ pub fn parseCommand(
         return MessageType.Get;
     } else if (std.mem.eql(u8, str, "get-or-else")) {
         return MessageType.GetOrElse;
+    } else if (std.mem.eql(u8, str, "get-or-else-set")) {
+        return MessageType.GetOrElseSet;
     } else if (std.mem.eql(u8, str, "set")) {
         return MessageType.Set;
     } else if (std.mem.eql(u8, str, "keys")) {
@@ -613,7 +697,7 @@ pub fn parseCommand(
             return MessageType.Stdin;
         }
     } else {
-        std.log.err("Unknown command. Possible commands: get, get-or-else, set, keys, key-values, keys-like, delete, delete-if-exists, stdin", .{});
+        std.log.err("Unknown command. Possible commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin", .{});
         return CommandError.InvalidCommand;
     };
 }
@@ -669,6 +753,26 @@ pub fn processArgs(
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else command", .{});
+                return 1;
+            }
+        },
+        .GetOrElseSet => {
+            var did_receive_valid_arg = false;
+            while (try args.next()) |key| {
+                const value = try args.next() orelse {
+                    std.log.err("Missing default value for key \"{s}\"", .{key});
+                    return 1;
+                };
+
+                if (!did_receive_valid_arg) {
+                    did_receive_valid_arg = true;
+                    try state_machine.open(filepath, true);
+                }
+
+                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .GetOrElseSet = .{ .key = key, .value = value } });
+            }
+            if (!did_receive_valid_arg) {
+                std.log.err("Missing at least one key value pair for get-or-else-set command", .{});
                 return 1;
             }
         },
