@@ -130,10 +130,27 @@ fn bind_text(
     }
 }
 
+fn printTokenWriter(
+    writer: *std.Io.Writer, 
+    delimiter: u8, 
+    is_binary_format: bool, 
+    comptime has_sentinel: bool, 
+    token: OptionallySentinelSlice(has_sentinel),
+    ) !void {
+    if (is_binary_format) {
+        _ = try writer.writeInt(u32, @truncate(token.len), .little);
+        _ = try writer.write(token);
+    } else {
+        _ = try writer.write(token);
+        _ = try writer.writeByte(delimiter);
+    }
+}
+
 const StateMachine = struct {
     current_state: State = .Initial,
     stdout: *std.Io.Writer,
     delimiter: u8,
+    is_binary_protocol: bool,
     db: *c.sqlite3 = undefined,
     stdout_writer: *std.fs.File.Writer = undefined,
     statement: *c.sqlite3_stmt = undefined,
@@ -182,6 +199,16 @@ const StateMachine = struct {
         errdefer _ = c.sqlite3_close(self.db);
 
         self.current_state = .{ .DatabaseOpen = undefined };
+    }
+
+    fn printToken(self: StateMachine, comptime has_sentinel: bool, token: OptionallySentinelSlice(has_sentinel)) !void {
+        try printTokenWriter(
+            self.stdout, 
+            self.delimiter, 
+            self.is_binary_protocol, 
+            has_sentinel,
+            token,
+        );
     }
 
     fn process(self: *StateMachine, comptime has_sentinel: bool, message: Message(has_sentinel)) !void {
@@ -310,7 +337,7 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter });
+                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
                 } else if (result_code == c.SQLITE_DONE) {
                     std.log.err("No value found for key \"{s}\"", .{key});
                     return DbError.FailedToGetKey;
@@ -330,9 +357,9 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter });
+                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
                 } else if (result_code == c.SQLITE_DONE) {
-                    _ = try self.stdout.print("{s}{c}", .{ pair.value, self.delimiter });
+                    try self.printToken(has_sentinel, pair.value);
                 } else {
                     std.log.err("Failed to read row: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
@@ -359,9 +386,9 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter });
+                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
                 } else if (result_code == c.SQLITE_DONE) {
-                    _ = try self.stdout.print("{s}{c}", .{ pair.value, self.delimiter });
+                    try self.printToken(has_sentinel, pair.value);
 
                     try bind_text(self.db, self.extra_statement, 1, pair.key);
                     try bind_text(self.db, self.extra_statement, 2, pair.value);
@@ -415,7 +442,7 @@ const StateMachine = struct {
             .Keys => {
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter });
+                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
 
                     result_code = c.sqlite3_step(self.statement);
                 }
@@ -431,7 +458,8 @@ const StateMachine = struct {
             .KeyValues => {
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}{c}{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter, c.sqlite3_column_text(self.statement, 1), self.delimiter });
+                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
+                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 1), 0));
 
                     result_code = c.sqlite3_step(self.statement);
                 }
@@ -449,7 +477,7 @@ const StateMachine = struct {
 
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
-                    _ = try self.stdout.print("{s}{c}", .{ c.sqlite3_column_text(self.statement, 0), self.delimiter });
+                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
 
                     result_code = c.sqlite3_step(self.statement);
                 }
@@ -575,43 +603,71 @@ const ArgIteratorWrapper = struct {
 const DelimiterIterator = struct {
     reader: *std.Io.Reader,
     delimiter: u8,
+    is_binary_protocol: bool,
     is_done: bool = false,
 
     fn next(self: *DelimiterIterator) !?[]const u8 {
-        while(true) {
-            if (self.is_done) return null;
-            const result = self.reader.takeDelimiterInclusive(self.delimiter) catch |err| {
-                switch (err) {
-                    std.Io.Reader.DelimiterError.EndOfStream => {
-                        self.is_done = true;
-                        const leftover = self.reader.buffered();
-                        if (leftover.len == 0) {
+        if (self.is_binary_protocol) {
+            while(true) {
+                if (self.is_done) return null;
+                const number_bytes = self.reader.takeInt(u32, .little) catch |err| {
+                    switch (err) {
+                        std.Io.Reader.Error.EndOfStream => {
+                            self.is_done = true;
                             return null;
-                        } else {
-                            return leftover;
-                        }
-                    },
-                    else => {
-                        return err;
-                    },
+                        },
+                        else => {
+                            return err;
+                        },
+                    }
+                };
+
+                if (number_bytes >= self.reader.buffer.len) {
+                    std.log.err("The length of token is too long: {d}", .{ number_bytes });
+                } else if (number_bytes > 0) {
+                    return try self.reader.take(number_bytes);
+                } else {
+                    // Ignore 0-length element
                 }
-            };
-            if (result.len <= 1) {
-                // Skip to the next iteration
-            } else {
-                return result[0 .. result.len - 1];
+            }
+        } else {
+            while(true) {
+                if (self.is_done) return null;
+                const result = self.reader.takeDelimiterInclusive(self.delimiter) catch |err| {
+                    switch (err) {
+                        std.Io.Reader.DelimiterError.EndOfStream => {
+                            self.is_done = true;
+                            const leftover = self.reader.buffered();
+                            if (leftover.len == 0) {
+                                return null;
+                            } else {
+                                return leftover;
+                            }
+                        },
+                        else => {
+                            return err;
+                        },
+                    }
+                };
+                if (result.len <= 1) {
+                    // Skip to the next iteration
+                } else {
+                    return result[0 .. result.len - 1];
+                }
             }
         }
     }
 };
 
-const usage = "Usage: sqey [-0] db_filepath command command_args*";
+const usage = "Usage: sqey [-0] [-b] db_filepath command command_args*";
 
 pub fn main() !u8 {
     var args = std.process.args();
     _ = args.skip();
 
     var delimiter: u8 = '\n';
+    var is_binary_protocol: bool = false;
+
     const filepath = filepath: {
         var filepath = args.next() orelse {
             std.log.err(usage, .{});
@@ -619,6 +675,13 @@ pub fn main() !u8 {
         };
         if (std.mem.eql(u8, filepath, "-0")) {
             delimiter = 0;
+            is_binary_protocol = false;
+            filepath = args.next() orelse {
+                std.log.err(usage, .{});
+                return 1;
+            };
+        } else if (std.mem.eql(u8, filepath, "-b")) {
+            is_binary_protocol = true;
             filepath = args.next() orelse {
                 std.log.err(usage, .{});
                 return 1;
@@ -630,7 +693,7 @@ pub fn main() !u8 {
     if (std.mem.eql(u8, filepath, "help") or std.mem.eql(u8, filepath, "--help")) {
         const help =
             \\
-            \\Usage: sqey <optional -0> <path to the sqlite database> <command> <one or more command arguments>
+            \\Usage: sqey <optional -0/-b> <path to the sqlite database> <command> <one or more command arguments>
             \\Available commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin
             \\Example: sqey mydb.db set key1 value1 key2 value2 && sqey mydb.db get key1 key2
         ;
@@ -645,6 +708,7 @@ pub fn main() !u8 {
     var state_machine: StateMachine = .{
         .stdout = stdout,
         .delimiter = delimiter,
+        .is_binary_protocol = is_binary_protocol,
     };
     defer state_machine.close();
 
@@ -659,6 +723,7 @@ pub fn main() !u8 {
         &state_machine,
         delimiter,
         null,
+        is_binary_protocol,
     );
 }
 
@@ -709,6 +774,7 @@ pub fn processArgs(
     state_machine: *StateMachine,
     delimiter: u8,
     trailing_message: ?[:0]const u8,
+    is_binary_protocol: bool,
 ) !u8 {
     const command = if (trailing_message) |message| command: {
         break :command try parseCommand(true, message, is_stdin);
@@ -882,8 +948,17 @@ pub fn processArgs(
                 var iterator: DelimiterIterator = .{
                     .reader = stdin,
                     .delimiter = delimiter,
+                    .is_binary_protocol = is_binary_protocol,
                 };
-                return try processArgs(&iterator, filepath, true, state_machine, delimiter, trailing_message_arg);
+                return try processArgs(
+                    &iterator, 
+                    filepath, 
+                    true, 
+                    state_machine, 
+                    delimiter, 
+                    trailing_message_arg, 
+                    is_binary_protocol,
+                );
             } else {
                 std.log.err("Processing stdin from stdin", .{});
                 return 1;
