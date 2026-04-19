@@ -139,9 +139,9 @@ fn printTokenWriter(
     ) !void {
     if (is_binary_format) {
         _ = try writer.writeInt(u32, @truncate(token.len), .little);
-        _ = try writer.write(token);
+        _ = try writer.writeAll(token);
     } else {
-        _ = try writer.write(token);
+        _ = try writer.writeAll(token);
         _ = try writer.writeByte(delimiter);
     }
 }
