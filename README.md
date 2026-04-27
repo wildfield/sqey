@@ -12,8 +12,18 @@ This utility requires `sqlite3` c library to be installed on your machine
 
 ## Usage
 
-`sqey <path to the sqlite database> <command> <one or more command arguments>`
+Usage: `sqey [options] <path to the file> [options] <command> <one or more command arguments>`
 
-Available commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin
+Available commands: `get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin`
 
 Example: `sqey mydb.db set key1 value1 key2 value2 && sqey mydb.db get key1 key2`
+
+Available Options:
+
+-0: Output: use null terminator instead of new line when printing. Input: tokens are separated by null terminator instead of newline when using "stdin"
+
+-b: Output: use binary format when printing. Input: use binary format when using "stdin". Binary format: instead of terminator, each token is preceded by a 32-bit unsigned little endian length
+
+-r: Reverse output order for some commands that print keys (keys, key-values, ...)
+
+-h\\--help: Print help
