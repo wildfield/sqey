@@ -181,7 +181,7 @@ const StateMachine = struct {
             var error_msg: [*:0]u8 = undefined;
             const failure2 = c.sqlite3_exec(
                 db,
-                "CREATE TABLE IF NOT EXISTS data(id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE, value TEXT)",
+                "CREATE TABLE IF NOT EXISTS data(id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE, value BLOB)",
                 null,
                 null,
                 @ptrCast(&error_msg),
