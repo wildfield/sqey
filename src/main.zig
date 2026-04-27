@@ -151,6 +151,7 @@ const StateMachine = struct {
     stdout: *std.Io.Writer,
     delimiter: u8,
     is_binary_protocol: bool,
+    is_reverse_order_output: bool,
     db: *c.sqlite3 = undefined,
     stdout_writer: *std.fs.File.Writer = undefined,
     statement: *c.sqlite3_stmt = undefined,
@@ -226,6 +227,14 @@ const StateMachine = struct {
                     self.current_state = .Invalid;
                 }
 
+                const order = order: {
+                    if (!self.is_reverse_order_output) {
+                        break :order "ASC";
+                    } else {
+                        break :order "DESC";
+                    }
+                };
+
                 switch (message) {
                     .Get, .GetOrElse => {
                         const statement: *c.sqlite3_stmt =
@@ -277,28 +286,40 @@ const StateMachine = struct {
                         }
                     },
                     .Keys => {
+                        const statement_str_pattern = "SELECT key FROM data ORDER BY id {s}";
+                        var statement_str_buf: [statement_str_pattern.len + 1]u8 = undefined;
+                        const statement_str = try std.fmt.bufPrint(&statement_str_buf, statement_str_pattern, .{ order });
+
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
                                 self.db,
-                                "SELECT key FROM data ORDER BY id",
+                                statement_str,
                             );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
                     },
                     .KeyValues => {
+                        const statement_str_pattern = "SELECT key, value FROM data ORDER BY id {s}";
+                        var statement_str_buf: [statement_str_pattern.len + 1]u8 = undefined;
+                        const statement_str = try std.fmt.bufPrint(&statement_str_buf, statement_str_pattern, .{ order });
+
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
                                 self.db,
-                                "SELECT key, value FROM data ORDER BY id",
+                                statement_str,
                             );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
                     },
                     .KeysLike => {
+                        const statement_str_pattern = "SELECT key FROM data WHERE key LIKE ? ORDER BY id {s}";
+                        var statement_str_buf: [statement_str_pattern.len + 1]u8 = undefined;
+                        const statement_str = try std.fmt.bufPrint(&statement_str_buf, statement_str_pattern, .{ order });
+
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
                                 self.db,
-                                "SELECT key FROM data WHERE key LIKE ? ORDER BY id",
+                                statement_str,
                             );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
@@ -718,6 +739,7 @@ const OptionParsingResultEnum = enum {
 const Options = struct {
     delimiter: u8 = '\n',
     is_binary_protocol: bool = false,
+    is_reverse_order_output: bool = false,
 };
 
 const OptionsResult = struct {
@@ -768,6 +790,10 @@ fn parseOptionsOrArg(
                 }
             }
 
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'r')) {
+                options.is_reverse_order_output = true;
+            }
+
             arg = args.next() orelse {
                 std.log.err(usage, .{});
                 return error.MissingArgument;
@@ -811,6 +837,7 @@ pub fn main() !u8 {
                         .stdout = stdout,
                         .delimiter = options.delimiter,
                         .is_binary_protocol = options.is_binary_protocol,
+                        .is_reverse_order_output = options.is_reverse_order_output,
                     };
                     defer state_machine.close();
 
