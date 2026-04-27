@@ -131,12 +131,12 @@ fn bind_text(
 }
 
 fn printTokenWriter(
-    writer: *std.Io.Writer, 
-    delimiter: u8, 
-    is_binary_format: bool, 
-    comptime has_sentinel: bool, 
+    writer: *std.Io.Writer,
+    delimiter: u8,
+    is_binary_format: bool,
+    comptime has_sentinel: bool,
     token: OptionallySentinelSlice(has_sentinel),
-    ) !void {
+) !void {
     if (is_binary_format) {
         _ = try writer.writeInt(u32, @truncate(token.len), .little);
         _ = try writer.writeAll(token);
@@ -203,9 +203,9 @@ const StateMachine = struct {
 
     fn printToken(self: StateMachine, comptime has_sentinel: bool, token: OptionallySentinelSlice(has_sentinel)) !void {
         try printTokenWriter(
-            self.stdout, 
-            self.delimiter, 
-            self.is_binary_protocol, 
+            self.stdout,
+            self.delimiter,
+            self.is_binary_protocol,
             has_sentinel,
             token,
         );
@@ -230,26 +230,26 @@ const StateMachine = struct {
                     .Get, .GetOrElse => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                            self.db,
-                            "SELECT value FROM data WHERE key = ?",
-                        );
+                                self.db,
+                                "SELECT value FROM data WHERE key = ?",
+                            );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
                     },
                     .GetOrElseSet => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                            self.db,
-                            "SELECT value FROM data WHERE key = ?",
-                        );
+                                self.db,
+                                "SELECT value FROM data WHERE key = ?",
+                            );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
 
                         const extra_statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                            self.db,
-                            "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
-                        );
+                                self.db,
+                                "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
+                            );
                         errdefer _ = c.sqlite3_finalize(extra_statement);
                         self.extra_statement = extra_statement;
 
@@ -263,9 +263,9 @@ const StateMachine = struct {
                     .Set => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                            self.db,
-                            "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
-                        );
+                                self.db,
+                                "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
+                            );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
 
@@ -279,36 +279,36 @@ const StateMachine = struct {
                     .Keys => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                            self.db,
-                            "SELECT key FROM data ORDER BY id",
-                        );
+                                self.db,
+                                "SELECT key FROM data ORDER BY id",
+                            );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
                     },
                     .KeyValues => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                            self.db,
-                            "SELECT key, value FROM data ORDER BY id",
-                        );
+                                self.db,
+                                "SELECT key, value FROM data ORDER BY id",
+                            );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
                     },
                     .KeysLike => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                            self.db,
-                            "SELECT key FROM data WHERE key LIKE ? ORDER BY id",
-                        );
+                                self.db,
+                                "SELECT key FROM data WHERE key LIKE ? ORDER BY id",
+                            );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
                     },
                     .Delete, .DeleteIfExists => {
                         const statement: *c.sqlite3_stmt =
                             try prepare_statement(
-                            self.db,
-                            "DELETE FROM data WHERE key = ?",
-                        );
+                                self.db,
+                                "DELETE FROM data WHERE key = ?",
+                            );
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
 
@@ -600,16 +600,43 @@ const ArgIteratorWrapper = struct {
     }
 };
 
+// Limit entries to 1 MB for sanity checking
+const MAX_STDIN_SIZE = 1024 * 1024;
+
+const DelimiterIteratorOptions = struct {
+    delimiter: u8,
+    is_binary_protocol: bool,
+};
+
 const DelimiterIterator = struct {
     reader: *std.Io.Reader,
     delimiter: u8,
     is_binary_protocol: bool,
     is_done: bool = false,
+    input_writer: std.io.Writer.Allocating,
 
+    fn init(allocator: std.mem.Allocator, reader: *std.Io.Reader, options: DelimiterIteratorOptions) DelimiterIterator {
+        const input_writer = std.io.Writer.Allocating.init(allocator);
+
+        return .{
+            .reader = reader,
+            .delimiter = options.delimiter,
+            .is_binary_protocol = options.is_binary_protocol,
+            .input_writer = input_writer,
+        };
+    }
+
+    fn deinit(self: *DelimiterIterator) void {
+        self.input_writer.deinit();
+    }
+
+    // Calling next invalidates the result from previous call, except when the iterator is done
     fn next(self: *DelimiterIterator) !?[]const u8 {
         if (self.is_binary_protocol) {
-            while(true) {
+            while (true) {
                 if (self.is_done) return null;
+                self.input_writer.clearRetainingCapacity();
+
                 const number_bytes = self.reader.takeInt(u32, .little) catch |err| {
                     switch (err) {
                         std.Io.Reader.Error.EndOfStream => {
@@ -622,37 +649,42 @@ const DelimiterIterator = struct {
                     }
                 };
 
-                if (number_bytes >= self.reader.buffer.len) {
-                    std.log.err("The length of token is too long: {d}", .{ number_bytes });
+                if (number_bytes >= MAX_STDIN_SIZE) {
+                    std.log.err("The length of token is too long: {d}", .{number_bytes});
                 } else if (number_bytes > 0) {
-                    return try self.reader.take(number_bytes);
+                    try self.reader.streamExact(&self.input_writer.writer, number_bytes);
+                    return self.input_writer.written();
                 } else {
                     // Ignore 0-length element
                 }
             }
         } else {
-            while(true) {
+            while (true) {
                 if (self.is_done) return null;
-                const result = self.reader.takeDelimiterInclusive(self.delimiter) catch |err| {
+                self.input_writer.clearRetainingCapacity();
+
+                const read_bytes = try self.reader.streamDelimiterLimit(
+                    &self.input_writer.writer,
+                    self.delimiter,
+                    .limited(MAX_STDIN_SIZE),
+                );
+
+                // Toss the delimiter
+                _ = self.reader.takeByte() catch |err| {
                     switch (err) {
-                        std.Io.Reader.DelimiterError.EndOfStream => {
+                        error.EndOfStream => {
                             self.is_done = true;
-                            const leftover = self.reader.buffered();
-                            if (leftover.len == 0) {
-                                return null;
-                            } else {
-                                return leftover;
-                            }
                         },
                         else => {
                             return err;
                         },
                     }
                 };
-                if (result.len <= 1) {
+
+                if (read_bytes == 0) {
                     // Skip to the next iteration
                 } else {
-                    return result[0 .. result.len - 1];
+                    return self.input_writer.written();
                 }
             }
         }
@@ -717,6 +749,7 @@ pub fn main() !u8 {
     };
 
     return try processArgs(
+        std.heap.smp_allocator,
         wrapper,
         filepath,
         false,
@@ -727,7 +760,7 @@ pub fn main() !u8 {
     );
 }
 
-const CommandError = error {
+const CommandError = error{
     InvalidCommand,
 };
 
@@ -768,9 +801,10 @@ pub fn parseCommand(
 }
 
 pub fn processArgs(
+    allocator: std.mem.Allocator,
     args: anytype,
     filepath: [:0]const u8,
-    is_stdin: bool,
+    comptime is_stdin: bool,
     state_machine: *StateMachine,
     delimiter: u8,
     trailing_message: ?[:0]const u8,
@@ -785,6 +819,11 @@ pub fn processArgs(
         };
         break :command try parseCommand(hasSentinel(@TypeOf(command_str)), command_str, is_stdin);
     };
+
+    var key_buffer = std.io.Writer.Allocating.init(allocator);
+    defer {
+        key_buffer.deinit();
+    }
 
     switch (command) {
         .Get => {
@@ -804,7 +843,11 @@ pub fn processArgs(
         },
         .GetOrElse => {
             var did_receive_valid_arg = false;
-            while (try args.next()) |key| {
+            while (try args.next()) |raw_key| {
+                key_buffer.clearRetainingCapacity();
+                _ = try key_buffer.writer.write(raw_key);
+                const key = key_buffer.written();
+
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
                     return 1;
@@ -824,7 +867,11 @@ pub fn processArgs(
         },
         .GetOrElseSet => {
             var did_receive_valid_arg = false;
-            while (try args.next()) |key| {
+            while (try args.next()) |raw_key| {
+                key_buffer.clearRetainingCapacity();
+                _ = try key_buffer.writer.write(raw_key);
+                const key = key_buffer.written();
+
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
                     return 1;
@@ -844,7 +891,11 @@ pub fn processArgs(
         },
         .Set => {
             var did_receive_valid_arg = false;
-            while (try args.next()) |key| {
+            while (try args.next()) |raw_key| {
+                key_buffer.clearRetainingCapacity();
+                _ = try key_buffer.writer.write(raw_key);
+                const key = key_buffer.written();
+
                 const value = try args.next() orelse {
                     std.log.err("Missing value for key \"{s}\"", .{key});
                     return 1;
@@ -896,7 +947,11 @@ pub fn processArgs(
         },
         .Delete => {
             var did_receive_valid_arg = false;
-            while (try args.next()) |key| {
+            while (try args.next()) |raw_key| {
+                key_buffer.clearRetainingCapacity();
+                _ = try key_buffer.writer.write(raw_key);
+                const key = key_buffer.written();
+
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
                     try state_machine.open(filepath, false);
@@ -911,7 +966,11 @@ pub fn processArgs(
         },
         .DeleteIfExists => {
             var did_receive_valid_arg = false;
-            while (try args.next()) |key| {
+            while (try args.next()) |raw_key| {
+                key_buffer.clearRetainingCapacity();
+                _ = try key_buffer.writer.write(raw_key);
+                const key = key_buffer.written();
+
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
                     try state_machine.open(filepath, true);
@@ -941,22 +1000,26 @@ pub fn processArgs(
             }
 
             if (!is_stdin) {
-                var stdin_buffer: [1024*16]u8 = undefined;
+                var stdin_buffer: [4096]u8 = undefined;
                 var stdin_reader = std.fs.File.stdin().reader(&stdin_buffer);
                 const stdin = &stdin_reader.interface;
 
-                var iterator: DelimiterIterator = .{
-                    .reader = stdin,
+                var iterator = DelimiterIterator.init(allocator, stdin, .{
                     .delimiter = delimiter,
                     .is_binary_protocol = is_binary_protocol,
-                };
+                });
+                defer {
+                    iterator.deinit();
+                }
+
                 return try processArgs(
-                    &iterator, 
-                    filepath, 
-                    true, 
-                    state_machine, 
-                    delimiter, 
-                    trailing_message_arg, 
+                    allocator,
+                    &iterator,
+                    filepath,
+                    true,
+                    state_machine,
+                    delimiter,
+                    trailing_message_arg,
                     is_binary_protocol,
                 );
             } else {

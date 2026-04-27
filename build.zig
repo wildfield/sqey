@@ -83,6 +83,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    exe.use_llvm = true;
     exe.linkLibC();
     exe.linkSystemLibrary("sqlite3");
 
