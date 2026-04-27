@@ -613,15 +613,18 @@ const DelimiterIterator = struct {
     delimiter: u8,
     is_binary_protocol: bool,
     is_done: bool = false,
+    leftover_args: []const []const u8,
+    leftover_args_read_count: usize = 0,
     input_writer: std.io.Writer.Allocating,
 
-    fn init(allocator: std.mem.Allocator, reader: *std.Io.Reader, options: DelimiterIteratorOptions) DelimiterIterator {
+    fn init(allocator: std.mem.Allocator, reader: *std.Io.Reader, leftover_args: [][]const u8, options: DelimiterIteratorOptions) DelimiterIterator {
         const input_writer = std.io.Writer.Allocating.init(allocator);
 
         return .{
             .reader = reader,
             .delimiter = options.delimiter,
             .is_binary_protocol = options.is_binary_protocol,
+            .leftover_args = leftover_args,
             .input_writer = input_writer,
         };
     }
@@ -632,7 +635,10 @@ const DelimiterIterator = struct {
 
     // Calling next invalidates the result from previous call, except when the iterator is done
     fn next(self: *DelimiterIterator) !?[]const u8 {
-        if (self.is_binary_protocol) {
+        if (self.leftover_args_read_count < self.leftover_args.len) {
+            self.leftover_args_read_count += 1;
+            return self.leftover_args[self.leftover_args_read_count - 1];
+        } else if (self.is_binary_protocol) {
             while (true) {
                 if (self.is_done) return null;
                 self.input_writer.clearRetainingCapacity();
@@ -755,7 +761,6 @@ pub fn main() !u8 {
         filepath,
         &state_machine,
         delimiter,
-        null,
         is_binary_protocol,
     );
 }
@@ -807,12 +812,9 @@ pub fn processArgs(
     filepath: [:0]const u8,
     state_machine: *StateMachine,
     delimiter: u8,
-    trailing_message: ?[:0]const u8,
     is_binary_protocol: bool,
 ) !u8 {
-    const command = if (trailing_message) |message| command: {
-        break :command try parseCommand(true, message, is_stdin);
-    } else command: {
+    const command = command: {
         const command_str = try args.next() orelse {
             std.log.err(usage, .{});
             return 1;
@@ -984,30 +986,35 @@ pub fn processArgs(
             }
         },
         .Stdin => {
-            var trailing_message_arg: ?[:0]const u8 = null;
-            if (try args.next()) |arg| {
-                if (comptime hasSentinel(@TypeOf(arg))) {
-                    trailing_message_arg = arg;
-                } else {
-                    std.log.err("\"stdin\" extra command in stdin", .{});
-                    return 1;
-                }
-            }
-
-            if (try args.next()) |_| {
-                std.log.err("\"stdin\" command doesn't accept extra arguments after command", .{});
-                return 1;
-            }
-
             if (!is_stdin) {
+                // Prepare stdin reader
                 var stdin_buffer: [4096]u8 = undefined;
                 var stdin_reader = std.fs.File.stdin().reader(&stdin_buffer);
                 const stdin = &stdin_reader.interface;
+                
+                // Copy any leftover command-line args to the next iteration
+                // This allows more convenient commands like 'stdin set' or 'stdin set <key>'
+                var trailing_args_buffer = try std.ArrayList([]const u8).initCapacity(allocator, 8);
+                defer {
+                    for (trailing_args_buffer.items) |item| {
+                        allocator.free(item);
+                    }
+                    trailing_args_buffer.deinit(allocator);
+                }
 
-                var iterator = DelimiterIterator.init(allocator, stdin, .{
-                    .delimiter = delimiter,
-                    .is_binary_protocol = is_binary_protocol,
-                });
+                while (try args.next()) |arg| {
+                    try trailing_args_buffer.append(allocator, try allocator.dupe(u8, arg));
+                }
+
+                var iterator = DelimiterIterator.init(
+                    allocator,
+                    stdin,
+                    trailing_args_buffer.items,
+                    .{
+                        .delimiter = delimiter,
+                        .is_binary_protocol = is_binary_protocol,
+                    },
+                );
                 defer {
                     iterator.deinit();
                 }
@@ -1019,7 +1026,6 @@ pub fn processArgs(
                     filepath,
                     state_machine,
                     delimiter,
-                    trailing_message_arg,
                     is_binary_protocol,
                 );
             } else {
