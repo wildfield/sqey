@@ -718,8 +718,6 @@ const DelimiterIterator = struct {
     }
 };
 
-const usage = help;
-
 const help =
     \\
     \\Usage: sqey [options] <path to the file> [options] <command> <one or more command arguments>
@@ -735,6 +733,8 @@ const help =
     \\-h\--help: Print help
     \\
 ;
+
+const usage = help;
 
 const OptionsParsingError = error {
     MissingArgument,
