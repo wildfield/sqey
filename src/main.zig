@@ -805,6 +805,17 @@ pub fn parseCommand(
     };
 }
 
+// Temporarily stores the slice in the writer buffer
+// Clears the writer before using
+fn tempBuffered(
+    writer: *std.Io.Writer.Allocating,
+    slice: []const u8,
+) ![]const u8 {
+    writer.clearRetainingCapacity();
+    _ = try writer.writer.write(slice);
+    return writer.written();
+}
+
 pub fn processArgs(
     comptime is_stdin: bool,
     allocator: std.mem.Allocator,
@@ -846,9 +857,7 @@ pub fn processArgs(
         .GetOrElse => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                key_buffer.clearRetainingCapacity();
-                _ = try key_buffer.writer.write(raw_key);
-                const key = key_buffer.written();
+                const key = try tempBuffered(&key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
@@ -870,9 +879,7 @@ pub fn processArgs(
         .GetOrElseSet => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                key_buffer.clearRetainingCapacity();
-                _ = try key_buffer.writer.write(raw_key);
-                const key = key_buffer.written();
+                const key = try tempBuffered(&key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
@@ -894,9 +901,7 @@ pub fn processArgs(
         .Set => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                key_buffer.clearRetainingCapacity();
-                _ = try key_buffer.writer.write(raw_key);
-                const key = key_buffer.written();
+                const key = try tempBuffered(&key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing value for key \"{s}\"", .{key});
@@ -950,9 +955,7 @@ pub fn processArgs(
         .Delete => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                key_buffer.clearRetainingCapacity();
-                _ = try key_buffer.writer.write(raw_key);
-                const key = key_buffer.written();
+                const key = try tempBuffered(&key_buffer, raw_key);
 
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
@@ -969,9 +972,7 @@ pub fn processArgs(
         .DeleteIfExists => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                key_buffer.clearRetainingCapacity();
-                _ = try key_buffer.writer.write(raw_key);
-                const key = key_buffer.written();
+                const key = try tempBuffered(&key_buffer, raw_key);
 
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
