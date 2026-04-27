@@ -697,72 +697,141 @@ const DelimiterIterator = struct {
     }
 };
 
-const usage = "Usage: sqey [-0] [-b] db_filepath command command_args*";
+const usage = "Usage: sqey [-0bh] db_filepath command command_args*";
+const help =
+    \\
+    \\Usage: sqey <optional -0/-b/-h> <path to the sqlite database> <command> <one or more command arguments>
+    \\Available commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin
+    \\Example: sqey mydb.db set key1 value1 key2 value2 && sqey mydb.db get key1 key2
+;
+
+const OptionsParsingError = error {
+    MissingArgument,
+    ConflictingOptions,
+};
+
+const OptionParsingResultEnum = enum {
+    OptionsAndArg,
+    Help
+};
+
+const Options = struct {
+    delimiter: u8 = '\n',
+    is_binary_protocol: bool = false,
+};
+
+const OptionsResult = struct {
+    options: Options,
+    arg: [:0]const u8,
+};
+
+const OptionParsingResult = union(OptionParsingResultEnum) {
+    OptionsAndArg: OptionsResult,
+    Help: void,
+};
+
+fn parseOptionsOrArg(
+    args: *std.process.ArgIterator,
+    initial_options: Options,
+) OptionsParsingError!OptionParsingResult {
+    var options = initial_options;
+
+    var arg = args.next() orelse {
+        std.log.err(usage, .{});
+        return error.MissingArgument;
+    };
+
+    var is_options = true; 
+
+    while (is_options) {
+        is_options = arg.len > 0 and arg[0] == '-';  
+
+        if (is_options) {
+            const options_arg = arg;
+
+            const is_help = std.mem.eql(u8, options_arg, "--help") or std.mem.containsAtLeastScalar(u8, options_arg, 1, 'h');
+            if (is_help) {
+                return .{ .Help = undefined };
+            } else if (std.mem.containsAtLeastScalar(u8, options_arg, 1, '0')) {
+                if (!options.is_binary_protocol) {
+                    options.delimiter = 0;
+                } else {
+                    std.log.err("Binary protocol and null terminator are mutually exclusive", .{});
+                    return error.ConflictingOptions;
+                }
+            } else if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'b')) {
+                if (options.delimiter != 0) {
+                    options.is_binary_protocol = true;
+                } else {
+                    std.log.err("Binary protocol and null terminator are mutually exclusive", .{});
+                    return error.ConflictingOptions;
+                }
+            }
+
+            arg = args.next() orelse {
+                std.log.err(usage, .{});
+                return error.MissingArgument;
+            };
+        }
+    }
+
+    return .{ .OptionsAndArg = .{ .options = options, .arg = arg }};
+}
 
 pub fn main() !u8 {
     var args = std.process.args();
     _ = args.skip();
 
-    var delimiter: u8 = '\n';
-    var is_binary_protocol: bool = false;
+    var options: Options = .{};
+    const filepath_result = try parseOptionsOrArg(&args, options);
+    switch (filepath_result) {
+        .Help => {
+            std.log.info(help, .{});
+            return 0;
+        },
+        .OptionsAndArg => |result| {
+            const filepath = result.arg;
+            options = result.options;
 
-    const filepath = filepath: {
-        var filepath = args.next() orelse {
-            std.log.err(usage, .{});
-            return 1;
-        };
-        if (std.mem.eql(u8, filepath, "-0")) {
-            delimiter = 0;
-            is_binary_protocol = false;
-            filepath = args.next() orelse {
-                std.log.err(usage, .{});
-                return 1;
-            };
-        } else if (std.mem.eql(u8, filepath, "-b")) {
-            is_binary_protocol = true;
-            filepath = args.next() orelse {
-                std.log.err(usage, .{});
-                return 1;
-            };
+            const command_str_result = try parseOptionsOrArg(&args, options);
+            switch (command_str_result) {
+                .Help => {
+                    std.log.info(help, .{});
+                    return 0;
+                },
+                .OptionsAndArg => |command_result| {
+                    const command_str = command_result.arg;
+                    options = command_result.options;
+
+                    var stdout_buffer: [4096]u8 = undefined;
+                    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+                    const stdout = &stdout_writer.interface;
+
+                    var state_machine: StateMachine = .{
+                        .stdout = stdout,
+                        .delimiter = options.delimiter,
+                        .is_binary_protocol = options.is_binary_protocol,
+                    };
+                    defer state_machine.close();
+
+                    const wrapper: ArgIteratorWrapper = .{
+                        .iterator = &args,
+                    };
+
+                    return try processArgs(
+                        false,
+                        std.heap.smp_allocator,
+                        wrapper,
+                        command_str,
+                        filepath,
+                        &state_machine,
+                        options.delimiter,
+                        options.is_binary_protocol,
+                    );
+                }
+            }
         }
-        break :filepath filepath;
-    };
-
-    if (std.mem.eql(u8, filepath, "help") or std.mem.eql(u8, filepath, "--help")) {
-        const help =
-            \\
-            \\Usage: sqey <optional -0/-b> <path to the sqlite database> <command> <one or more command arguments>
-            \\Available commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin
-            \\Example: sqey mydb.db set key1 value1 key2 value2 && sqey mydb.db get key1 key2
-        ;
-        std.log.info(help, .{});
-        return 0;
     }
-
-    var stdout_buffer: [4096]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-    const stdout = &stdout_writer.interface;
-
-    var state_machine: StateMachine = .{
-        .stdout = stdout,
-        .delimiter = delimiter,
-        .is_binary_protocol = is_binary_protocol,
-    };
-    defer state_machine.close();
-
-    const wrapper: ArgIteratorWrapper = .{
-        .iterator = &args,
-    };
-
-    return try processArgs(
-        false,
-        std.heap.smp_allocator,
-        wrapper,
-        filepath,
-        &state_machine,
-        delimiter,
-        is_binary_protocol,
-    );
 }
 
 const CommandError = error{
@@ -820,18 +889,13 @@ pub fn processArgs(
     comptime is_stdin: bool,
     allocator: std.mem.Allocator,
     args: anytype,
+    command_str: [:0]const u8,
     filepath: [:0]const u8,
     state_machine: *StateMachine,
     delimiter: u8,
     is_binary_protocol: bool,
 ) !u8 {
-    const command = command: {
-        const command_str = try args.next() orelse {
-            std.log.err(usage, .{});
-            return 1;
-        };
-        break :command try parseCommand(hasSentinel(@TypeOf(command_str)), command_str, is_stdin);
-    };
+    const command = try parseCommand(hasSentinel(@TypeOf(command_str)), command_str, is_stdin);
 
     var key_buffer = std.io.Writer.Allocating.init(allocator);
     defer {
@@ -1024,6 +1088,7 @@ pub fn processArgs(
                     true,
                     allocator,
                     &iterator,
+                    command_str,
                     filepath,
                     state_machine,
                     delimiter,
