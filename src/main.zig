@@ -749,10 +749,10 @@ pub fn main() !u8 {
     };
 
     return try processArgs(
+        false,
         std.heap.smp_allocator,
         wrapper,
         filepath,
-        false,
         &state_machine,
         delimiter,
         null,
@@ -801,10 +801,10 @@ pub fn parseCommand(
 }
 
 pub fn processArgs(
+    comptime is_stdin: bool,
     allocator: std.mem.Allocator,
     args: anytype,
     filepath: [:0]const u8,
-    comptime is_stdin: bool,
     state_machine: *StateMachine,
     delimiter: u8,
     trailing_message: ?[:0]const u8,
@@ -1013,10 +1013,10 @@ pub fn processArgs(
                 }
 
                 return try processArgs(
+                    true,
                     allocator,
                     &iterator,
                     filepath,
-                    true,
                     state_machine,
                     delimiter,
                     trailing_message_arg,
