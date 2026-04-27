@@ -895,7 +895,15 @@ pub fn processArgs(
     delimiter: u8,
     is_binary_protocol: bool,
 ) !u8 {
-    const command = try parseCommand(hasSentinel(@TypeOf(command_str)), command_str, is_stdin);
+    const command = if (is_stdin) command: {
+        if (try args.next()) |arg| {
+            const command = try parseCommand(hasSentinel(@TypeOf(arg)), arg, is_stdin); 
+            break :command command;
+        } else {
+            std.log.err("Missing a command in the std input", .{});
+            return 1;
+        }
+    } else try parseCommand(true, command_str, is_stdin);
 
     var key_buffer = std.io.Writer.Allocating.init(allocator);
     defer {
