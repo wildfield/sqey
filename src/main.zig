@@ -34,19 +34,6 @@ fn OptionallySentinelSlice(comptime has_sentinel: bool) type {
     }
 }
 
-fn hasSentinel(comptime T: type) bool {
-    switch (@typeInfo(T)) {
-        .pointer => |info| {
-            if (std.builtin.Type.Pointer.sentinel(info)) |_| {
-                return true;
-            } else {
-                return false;
-            }
-        },
-        else => @compileError("Not a slice/pointer"),
-    }
-}
-
 // Accepts either regular or sentinel-terminated slice
 fn KeyValuePair(comptime has_sentinel: bool) type {
     return struct {
@@ -914,12 +901,22 @@ pub fn parseCommand(
 // Temporarily stores the slice in the writer buffer
 // Clears the writer before using
 fn tempBuffered(
+    comptime has_sentinel: bool,
     writer: *std.Io.Writer.Allocating,
-    slice: []const u8,
-) ![]const u8 {
+    slice: OptionallySentinelSlice(has_sentinel),
+) !OptionallySentinelSlice(has_sentinel) {
+
     writer.clearRetainingCapacity();
-    _ = try writer.writer.write(slice);
-    return writer.written();
+
+    if (!has_sentinel) {
+        _ = try writer.writer.write(slice);
+        return writer.written();
+    } else {
+        _ = try writer.writer.write(slice);
+        _ = try writer.writer.writeByte(0);
+        const written = writer.written();
+        return written[0..written.len - 1 :0];
+    }
 }
 
 pub fn processArgs(
@@ -934,7 +931,7 @@ pub fn processArgs(
 ) !u8 {
     const command = if (is_stdin) command: {
         if (try args.next()) |arg| {
-            const command = try parseCommand(hasSentinel(@TypeOf(arg)), arg, is_stdin); 
+            const command = try parseCommand(!is_stdin, arg, is_stdin); 
             break :command command;
         } else {
             std.log.err("Missing a command in the std input", .{});
@@ -956,7 +953,7 @@ pub fn processArgs(
                     try state_machine.open(filepath, false);
                 }
 
-                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .Get = key });
+                try state_machine.process(!is_stdin, .{ .Get = key });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for get command", .{});
@@ -966,7 +963,7 @@ pub fn processArgs(
         .GetOrElse => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                const key = try tempBuffered(&key_buffer, raw_key);
+                const key = try tempBuffered(!is_stdin, &key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
@@ -978,7 +975,7 @@ pub fn processArgs(
                     try state_machine.open(filepath, true);
                 }
 
-                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .GetOrElse = .{ .key = key, .value = value } });
+                try state_machine.process(!is_stdin, .{ .GetOrElse = .{ .key = key, .value = value } });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else command", .{});
@@ -988,7 +985,7 @@ pub fn processArgs(
         .GetOrElseSet => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                const key = try tempBuffered(&key_buffer, raw_key);
+                const key = try tempBuffered(!is_stdin, &key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
@@ -1000,7 +997,7 @@ pub fn processArgs(
                     try state_machine.open(filepath, true);
                 }
 
-                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .GetOrElseSet = .{ .key = key, .value = value } });
+                try state_machine.process(!is_stdin, .{ .GetOrElseSet = .{ .key = key, .value = value } });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else-set command", .{});
@@ -1010,7 +1007,7 @@ pub fn processArgs(
         .Set => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                const key = try tempBuffered(&key_buffer, raw_key);
+                const key = try tempBuffered(!is_stdin, &key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing value for key \"{s}\"", .{key});
@@ -1022,7 +1019,7 @@ pub fn processArgs(
                     try state_machine.open(filepath, true);
                 }
 
-                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .Set = .{ .key = key, .value = value } });
+                try state_machine.process(!is_stdin, .{ .Set = .{ .key = key, .value = value } });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for set command", .{});
@@ -1048,10 +1045,11 @@ pub fn processArgs(
             try state_machine.process(true, .{ .KeyValues = undefined });
         },
         .KeysLike => {
-            const pattern = try args.next() orelse {
+            const raw_pattern = try args.next() orelse {
                 std.log.err("Missing pattern for \"keys-like\"", .{});
                 return 1;
             };
+            const pattern = try tempBuffered(!is_stdin, &key_buffer, raw_pattern);
 
             if (try args.next()) |_| {
                 std.log.err("\"keys-like\" command doesn't accept any extra arguments after the pattern", .{});
@@ -1059,19 +1057,17 @@ pub fn processArgs(
             }
 
             try state_machine.open(filepath, true);
-            try state_machine.process(hasSentinel(@TypeOf(pattern)), .{ .KeysLike = pattern });
+            try state_machine.process(!is_stdin, .{ .KeysLike = pattern });
         },
         .Delete => {
             var did_receive_valid_arg = false;
-            while (try args.next()) |raw_key| {
-                const key = try tempBuffered(&key_buffer, raw_key);
-
+            while (try args.next()) |key| {
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
                     try state_machine.open(filepath, false);
                 }
 
-                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .Delete = key });
+                try state_machine.process(!is_stdin, .{ .Delete = key });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for delete command", .{});
@@ -1080,15 +1076,13 @@ pub fn processArgs(
         },
         .DeleteIfExists => {
             var did_receive_valid_arg = false;
-            while (try args.next()) |raw_key| {
-                const key = try tempBuffered(&key_buffer, raw_key);
-
+            while (try args.next()) |key| {
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
                     try state_machine.open(filepath, true);
                 }
 
-                try state_machine.process(hasSentinel(@TypeOf(key)), .{ .DeleteIfExists = key });
+                try state_machine.process(!is_stdin, .{ .DeleteIfExists = key });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for \"delete-if-exists\" command", .{});
