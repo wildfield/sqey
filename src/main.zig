@@ -26,36 +26,24 @@ const MessageType = enum {
     Stdin,
 };
 
-fn OptionallySentinelSlice(comptime has_sentinel: bool) type {
-    if (has_sentinel) {
-        return [:0]const u8;
-    } else {
-        return []const u8;
-    }
-}
-
 // Accepts either regular or sentinel-terminated slice
-fn KeyValuePair(comptime has_sentinel: bool) type {
-    return struct {
-        key: OptionallySentinelSlice(has_sentinel),
-        value: OptionallySentinelSlice(has_sentinel),
-    };
-}
+const KeyValuePair = struct {
+    key: []const u8,
+    value: []const u8,
+};
 
-fn Message(comptime has_sentinel: bool) type {
-    return union(MessageType) {
-        Get: OptionallySentinelSlice(has_sentinel),
-        GetOrElse: KeyValuePair(has_sentinel),
-        GetOrElseSet: KeyValuePair(has_sentinel),
-        Set: KeyValuePair(has_sentinel),
-        Keys: void,
-        KeyValues: void,
-        KeysLike: OptionallySentinelSlice(has_sentinel),
-        Delete: OptionallySentinelSlice(has_sentinel),
-        DeleteIfExists: OptionallySentinelSlice(has_sentinel),
-        Stdin: void,
-    };
-}
+const Message = union(MessageType) {
+    Get: []const u8,
+    GetOrElse: KeyValuePair,
+    GetOrElseSet: KeyValuePair,
+    Set: KeyValuePair,
+    Keys: void,
+    KeyValues: void,
+    KeysLike: []const u8,
+    Delete: []const u8,
+    DeleteIfExists: []const u8,
+    Stdin: void,
+};
 
 const StateMachineError = error{
     InvalidState,
@@ -121,8 +109,7 @@ fn printTokenWriter(
     writer: *std.Io.Writer,
     delimiter: u8,
     is_binary_format: bool,
-    comptime has_sentinel: bool,
-    token: OptionallySentinelSlice(has_sentinel),
+    token: []const u8,
 ) !void {
     if (is_binary_format) {
         _ = try writer.writeInt(u32, @truncate(token.len), .little);
@@ -189,17 +176,16 @@ const StateMachine = struct {
         self.current_state = .{ .DatabaseOpen = undefined };
     }
 
-    fn printToken(self: StateMachine, comptime has_sentinel: bool, token: OptionallySentinelSlice(has_sentinel)) !void {
+    fn printToken(self: StateMachine, token: []const u8) !void {
         try printTokenWriter(
             self.stdout,
             self.delimiter,
             self.is_binary_protocol,
-            has_sentinel,
             token,
         );
     }
 
-    fn process(self: *StateMachine, comptime has_sentinel: bool, message: Message(has_sentinel)) !void {
+    fn process(self: *StateMachine, message: Message) !void {
         switch (self.current_state) {
             .Initial => return StateMachineError.InvalidState,
             .Closed => return StateMachineError.InvalidState,
@@ -345,7 +331,7 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
+                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
                 } else if (result_code == c.SQLITE_DONE) {
                     std.log.err("No value found for key \"{s}\"", .{key});
                     return DbError.FailedToGetKey;
@@ -365,9 +351,9 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
+                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
                 } else if (result_code == c.SQLITE_DONE) {
-                    try self.printToken(has_sentinel, pair.value);
+                    try self.printToken(pair.value);
                 } else {
                     std.log.err("Failed to read row: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
@@ -394,9 +380,9 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
+                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
                 } else if (result_code == c.SQLITE_DONE) {
-                    try self.printToken(has_sentinel, pair.value);
+                    try self.printToken(pair.value);
 
                     try bind_text(self.db, self.extra_statement, 1, pair.key);
                     try bind_text(self.db, self.extra_statement, 2, pair.value);
@@ -450,7 +436,7 @@ const StateMachine = struct {
             .Keys => {
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
-                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
+                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
 
                     result_code = c.sqlite3_step(self.statement);
                 }
@@ -466,8 +452,8 @@ const StateMachine = struct {
             .KeyValues => {
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
-                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
-                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 1), 0));
+                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
+                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 1), 0));
 
                     result_code = c.sqlite3_step(self.statement);
                 }
@@ -485,7 +471,7 @@ const StateMachine = struct {
 
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
-                    try self.printToken(true, std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
+                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
 
                     result_code = c.sqlite3_step(self.statement);
                 }
@@ -603,7 +589,7 @@ const StateMachine = struct {
 const ArgIteratorWrapper = struct {
     iterator: *std.process.ArgIterator,
 
-    fn next(self: *const ArgIteratorWrapper) !?[:0]const u8 {
+    fn next(self: *const ArgIteratorWrapper) !?[]const u8 {
         return self.iterator.next();
     }
 };
@@ -863,8 +849,7 @@ const CommandError = error{
 };
 
 pub fn parseCommand(
-    comptime has_sentinel: bool,
-    str: OptionallySentinelSlice(has_sentinel),
+    str: []const u8,
     is_stdin: bool,
 ) !MessageType {
     return if (std.mem.eql(u8, str, "get")) {
@@ -901,22 +886,12 @@ pub fn parseCommand(
 // Temporarily stores the slice in the writer buffer
 // Clears the writer before using
 fn tempBuffered(
-    comptime has_sentinel: bool,
     writer: *std.Io.Writer.Allocating,
-    slice: OptionallySentinelSlice(has_sentinel),
-) !OptionallySentinelSlice(has_sentinel) {
-
+    slice: []const u8,
+) ![]const u8 {
     writer.clearRetainingCapacity();
-
-    if (!has_sentinel) {
-        _ = try writer.writer.write(slice);
-        return writer.written();
-    } else {
-        _ = try writer.writer.write(slice);
-        _ = try writer.writer.writeByte(0);
-        const written = writer.written();
-        return written[0..written.len - 1 :0];
-    }
+    _ = try writer.writer.write(slice);
+    return writer.written();
 }
 
 pub fn processArgs(
@@ -931,13 +906,13 @@ pub fn processArgs(
 ) !u8 {
     const command = if (is_stdin) command: {
         if (try args.next()) |arg| {
-            const command = try parseCommand(!is_stdin, arg, is_stdin); 
+            const command = try parseCommand(arg, is_stdin); 
             break :command command;
         } else {
             std.log.err("Missing a command in the std input", .{});
             return 1;
         }
-    } else try parseCommand(true, command_str, is_stdin);
+    } else try parseCommand(command_str, is_stdin);
 
     var key_buffer = std.io.Writer.Allocating.init(allocator);
     defer {
@@ -953,7 +928,7 @@ pub fn processArgs(
                     try state_machine.open(filepath, false);
                 }
 
-                try state_machine.process(!is_stdin, .{ .Get = key });
+                try state_machine.process(.{ .Get = key });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for get command", .{});
@@ -963,7 +938,7 @@ pub fn processArgs(
         .GetOrElse => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                const key = try tempBuffered(!is_stdin, &key_buffer, raw_key);
+                const key = try tempBuffered(&key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
@@ -975,7 +950,7 @@ pub fn processArgs(
                     try state_machine.open(filepath, true);
                 }
 
-                try state_machine.process(!is_stdin, .{ .GetOrElse = .{ .key = key, .value = value } });
+                try state_machine.process(.{ .GetOrElse = .{ .key = key, .value = value } });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else command", .{});
@@ -985,7 +960,7 @@ pub fn processArgs(
         .GetOrElseSet => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                const key = try tempBuffered(!is_stdin, &key_buffer, raw_key);
+                const key = try tempBuffered(&key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
@@ -997,7 +972,7 @@ pub fn processArgs(
                     try state_machine.open(filepath, true);
                 }
 
-                try state_machine.process(!is_stdin, .{ .GetOrElseSet = .{ .key = key, .value = value } });
+                try state_machine.process(.{ .GetOrElseSet = .{ .key = key, .value = value } });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else-set command", .{});
@@ -1007,7 +982,7 @@ pub fn processArgs(
         .Set => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                const key = try tempBuffered(!is_stdin, &key_buffer, raw_key);
+                const key = try tempBuffered(&key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing value for key \"{s}\"", .{key});
@@ -1019,7 +994,7 @@ pub fn processArgs(
                     try state_machine.open(filepath, true);
                 }
 
-                try state_machine.process(!is_stdin, .{ .Set = .{ .key = key, .value = value } });
+                try state_machine.process(.{ .Set = .{ .key = key, .value = value } });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for set command", .{});
@@ -1033,7 +1008,7 @@ pub fn processArgs(
             }
 
             try state_machine.open(filepath, true);
-            try state_machine.process(true, .{ .Keys = undefined });
+            try state_machine.process(.{ .Keys = undefined });
         },
         .KeyValues => {
             if (try args.next()) |_| {
@@ -1042,14 +1017,14 @@ pub fn processArgs(
             }
 
             try state_machine.open(filepath, true);
-            try state_machine.process(true, .{ .KeyValues = undefined });
+            try state_machine.process(.{ .KeyValues = undefined });
         },
         .KeysLike => {
             const raw_pattern = try args.next() orelse {
                 std.log.err("Missing pattern for \"keys-like\"", .{});
                 return 1;
             };
-            const pattern = try tempBuffered(!is_stdin, &key_buffer, raw_pattern);
+            const pattern = try tempBuffered(&key_buffer, raw_pattern);
 
             if (try args.next()) |_| {
                 std.log.err("\"keys-like\" command doesn't accept any extra arguments after the pattern", .{});
@@ -1057,7 +1032,7 @@ pub fn processArgs(
             }
 
             try state_machine.open(filepath, true);
-            try state_machine.process(!is_stdin, .{ .KeysLike = pattern });
+            try state_machine.process(.{ .KeysLike = pattern });
         },
         .Delete => {
             var did_receive_valid_arg = false;
@@ -1067,7 +1042,7 @@ pub fn processArgs(
                     try state_machine.open(filepath, false);
                 }
 
-                try state_machine.process(!is_stdin, .{ .Delete = key });
+                try state_machine.process(.{ .Delete = key });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for delete command", .{});
@@ -1082,7 +1057,7 @@ pub fn processArgs(
                     try state_machine.open(filepath, true);
                 }
 
-                try state_machine.process(!is_stdin, .{ .DeleteIfExists = key });
+                try state_machine.process(.{ .DeleteIfExists = key });
             }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for \"delete-if-exists\" command", .{});
