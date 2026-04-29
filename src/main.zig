@@ -109,10 +109,13 @@ fn printTokenWriter(
     writer: *std.Io.Writer,
     delimiter: u8,
     is_binary_format: bool,
+    is_single_entry: bool,
     token: []const u8,
 ) !void {
     if (is_binary_format) {
         _ = try writer.writeInt(u32, @truncate(token.len), .little);
+        _ = try writer.writeAll(token);
+    } else if (is_single_entry) {
         _ = try writer.writeAll(token);
     } else {
         _ = try writer.writeAll(token);
@@ -125,6 +128,7 @@ const StateMachine = struct {
     stdout: *std.Io.Writer,
     delimiter: u8,
     is_binary_protocol: bool,
+    is_single_entry: bool,
     is_reverse_order_output: bool,
     db: *c.sqlite3 = undefined,
     stdout_writer: *std.fs.File.Writer = undefined,
@@ -181,6 +185,7 @@ const StateMachine = struct {
             self.stdout,
             self.delimiter,
             self.is_binary_protocol,
+            self.is_single_entry,
             token,
         );
     }
@@ -600,12 +605,14 @@ const MAX_STDIN_SIZE = 1024 * 1024;
 const DelimiterIteratorOptions = struct {
     delimiter: u8,
     is_binary_protocol: bool,
+    is_single_entry: bool,
 };
 
 const DelimiterIterator = struct {
     reader: *std.Io.Reader,
     delimiter: u8,
     is_binary_protocol: bool,
+    is_single_entry: bool,
     is_done: bool = false,
     leftover_args: []const []const u8,
     leftover_args_read_count: usize = 0,
@@ -618,6 +625,7 @@ const DelimiterIterator = struct {
             .reader = reader,
             .delimiter = options.delimiter,
             .is_binary_protocol = options.is_binary_protocol,
+            .is_single_entry = options.is_single_entry,
             .leftover_args = leftover_args,
             .input_writer = input_writer,
         };
@@ -658,6 +666,14 @@ const DelimiterIterator = struct {
                     // Ignore 0-length element
                 }
             }
+        } else if (self.is_single_entry) {
+            if (self.is_done) return null;
+            self.input_writer.clearRetainingCapacity();
+
+            _ = try self.reader.stream(&self.input_writer.writer, .limited(MAX_STDIN_SIZE));
+            self.is_done = true;
+
+            return self.input_writer.written();
         } else {
             while (true) {
                 if (self.is_done) return null;
@@ -702,6 +718,7 @@ const help =
     \\Available Options:
     \\-0: Output: use null terminator instead of new line when printing. Input: tokens are separated by null terminator instead of newline when using "stdin"
     \\-b: Output: use binary format when printing. Input: use binary format when using "stdin". Binary format: instead of terminator, each token is preceded by a 32-bit unsigned little endian length
+    \\-s: Single entry input/output
     \\-r: Reverse output order for some commands that print keys (keys, key-values, ...)
     \\-h\--help: Print help
     \\
@@ -723,6 +740,7 @@ const Options = struct {
     delimiter: u8 = '\n',
     is_binary_protocol: bool = false,
     is_reverse_order_output: bool = false,
+    is_single_entry: bool = false,
 };
 
 const OptionsResult = struct {
@@ -758,17 +776,24 @@ fn parseOptionsOrArg(
             if (is_help) {
                 return .{ .Help = undefined };
             } else if (std.mem.containsAtLeastScalar(u8, options_arg, 1, '0')) {
-                if (!options.is_binary_protocol) {
+                if (!options.is_binary_protocol and !options.is_single_entry) {
                     options.delimiter = 0;
                 } else {
-                    std.log.err("Binary protocol and null terminator are mutually exclusive", .{});
+                    std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return error.ConflictingOptions;
                 }
             } else if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'b')) {
-                if (options.delimiter != 0) {
+                if (options.delimiter != 0 and !options.is_single_entry) {
                     options.is_binary_protocol = true;
                 } else {
-                    std.log.err("Binary protocol and null terminator are mutually exclusive", .{});
+                    std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
+                    return error.ConflictingOptions;
+                }
+            } else if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 's')) {
+                if (options.delimiter != 0 and !options.is_binary_protocol) {
+                    options.is_single_entry = true;
+                } else {
+                    std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return error.ConflictingOptions;
                 }
             }
@@ -820,6 +845,7 @@ pub fn main() !u8 {
                         .stdout = stdout,
                         .delimiter = options.delimiter,
                         .is_binary_protocol = options.is_binary_protocol,
+                        .is_single_entry = options.is_single_entry,
                         .is_reverse_order_output = options.is_reverse_order_output,
                     };
                     defer state_machine.close();
@@ -835,8 +861,7 @@ pub fn main() !u8 {
                         command_str,
                         filepath,
                         &state_machine,
-                        options.delimiter,
-                        options.is_binary_protocol,
+                        options,
                     );
                 }
             }
@@ -901,8 +926,7 @@ pub fn processArgs(
     command_str: [:0]const u8,
     filepath: [:0]const u8,
     state_machine: *StateMachine,
-    delimiter: u8,
-    is_binary_protocol: bool,
+    options: Options,
 ) !u8 {
     const command = if (is_stdin) command: {
         if (try args.next()) |arg| {
@@ -926,6 +950,9 @@ pub fn processArgs(
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
                     try state_machine.open(filepath, false);
+                } else if (options.is_single_entry) {
+                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                    return 1;
                 }
 
                 try state_machine.process(.{ .Get = key });
@@ -948,6 +975,9 @@ pub fn processArgs(
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
                     try state_machine.open(filepath, true);
+                } else if (options.is_single_entry) {
+                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                    return 1;
                 }
 
                 try state_machine.process(.{ .GetOrElse = .{ .key = key, .value = value } });
@@ -970,6 +1000,9 @@ pub fn processArgs(
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
                     try state_machine.open(filepath, true);
+                } else if (options.is_single_entry) {
+                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                    return 1;
                 }
 
                 try state_machine.process(.{ .GetOrElseSet = .{ .key = key, .value = value } });
@@ -992,6 +1025,9 @@ pub fn processArgs(
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
                     try state_machine.open(filepath, true);
+                } else if (options.is_single_entry) {
+                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                    return 1;
                 }
 
                 try state_machine.process(.{ .Set = .{ .key = key, .value = value } });
@@ -1002,6 +1038,11 @@ pub fn processArgs(
             }
         },
         .Keys => {
+            if (options.is_single_entry) {
+                std.log.err("Key operations are not allowed with single entry flag", .{});
+                return 1;
+            }
+
             if (try args.next()) |_| {
                 std.log.err("Keys command doesn't accept extra arguments", .{});
                 return 1;
@@ -1011,6 +1052,11 @@ pub fn processArgs(
             try state_machine.process(.{ .Keys = undefined });
         },
         .KeyValues => {
+            if (options.is_single_entry) {
+                std.log.err("Key operations are not allowed with single entry flag", .{});
+                return 1;
+            }
+
             if (try args.next()) |_| {
                 std.log.err("\"key-values\" command doesn't accept extra arguments", .{});
                 return 1;
@@ -1024,6 +1070,7 @@ pub fn processArgs(
                 std.log.err("Missing pattern for \"keys-like\"", .{});
                 return 1;
             };
+
             const pattern = try tempBuffered(&key_buffer, raw_pattern);
 
             if (try args.next()) |_| {
@@ -1040,6 +1087,9 @@ pub fn processArgs(
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
                     try state_machine.open(filepath, false);
+                } else if (options.is_single_entry) {
+                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                    return 1;
                 }
 
                 try state_machine.process(.{ .Delete = key });
@@ -1055,6 +1105,9 @@ pub fn processArgs(
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
                     try state_machine.open(filepath, true);
+                } else if (options.is_single_entry) {
+                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                    return 1;
                 }
 
                 try state_machine.process(.{ .DeleteIfExists = key });
@@ -1090,8 +1143,9 @@ pub fn processArgs(
                     stdin,
                     trailing_args_buffer.items,
                     .{
-                        .delimiter = delimiter,
-                        .is_binary_protocol = is_binary_protocol,
+                        .delimiter = options.delimiter,
+                        .is_binary_protocol = options.is_binary_protocol,
+                        .is_single_entry = options.is_single_entry,
                     },
                 );
                 defer {
@@ -1105,8 +1159,7 @@ pub fn processArgs(
                     command_str,
                     filepath,
                     state_machine,
-                    delimiter,
-                    is_binary_protocol,
+                    options,
                 );
             } else {
                 std.log.err("Processing stdin from stdin", .{});
