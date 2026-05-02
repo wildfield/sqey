@@ -176,13 +176,13 @@ const StateMachine = struct {
                 return DbError.FailedToOpenDatabase;
             }
 
-            var error_msg: [*:0]u8 = undefined;
+            var error_msg: [*c]u8 = undefined;
             const failure2 = c.sqlite3_exec(
                 db,
                 "CREATE TABLE IF NOT EXISTS data(id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE, value BLOB)",
                 null,
                 null,
-                @ptrCast(&error_msg),
+                &error_msg,
             );
             if (failure2 != 0) {
                 std.log.err("Failed to create table: {s}", .{error_msg});
@@ -264,8 +264,8 @@ const StateMachine = struct {
                         errdefer _ = c.sqlite3_finalize(extra_statement);
                         self.extra_statement = extra_statement;
 
-                        var begin_err_msg: [:0]u8 = undefined;
-                        const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, @ptrCast(&begin_err_msg));
+                        var begin_err_msg: [*c]u8 = undefined;
+                        const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
                         if (begin_code != 0) {
                             std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
                             return DbError.FailedToExecuteQuery;
@@ -280,8 +280,8 @@ const StateMachine = struct {
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
 
-                        var begin_err_msg: [:0]u8 = undefined;
-                        const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, @ptrCast(&begin_err_msg));
+                        var begin_err_msg: [*c]u8 = undefined;
+                        const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
                         if (begin_code != 0) {
                             std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
                             return DbError.FailedToExecuteQuery;
@@ -335,8 +335,8 @@ const StateMachine = struct {
                         errdefer _ = c.sqlite3_finalize(statement);
                         self.statement = statement;
 
-                        var begin_err_msg: [:0]u8 = undefined;
-                        const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, @ptrCast(&begin_err_msg));
+                        var begin_err_msg: [*c]u8 = undefined;
+                        const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
                         if (begin_code != 0) {
                             std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
                             return DbError.FailedToExecuteQuery;
@@ -398,8 +398,8 @@ const StateMachine = struct {
                 errdefer {
                     _ = c.sqlite3_finalize(self.extra_statement);
 
-                    var end_err_msg: [:0]u8 = undefined;
-                    const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, @ptrCast(&end_err_msg));
+                    var end_err_msg: [*c]u8 = undefined;
+                    const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, &end_err_msg);
                     if (end_code != 0) {
                         std.log.err("Failed to rollback transaction {s}", .{end_err_msg});
                     }
@@ -440,8 +440,8 @@ const StateMachine = struct {
             },
             .Set => |pair| {
                 errdefer {
-                    var end_err_msg: [:0]u8 = undefined;
-                    const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, @ptrCast(&end_err_msg));
+                    var end_err_msg: [*c]u8 = undefined;
+                    const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, &end_err_msg);
                     if (end_code != 0) {
                         std.log.err("Failed to rollback transaction {s}", .{end_err_msg});
                     }
@@ -512,8 +512,8 @@ const StateMachine = struct {
             },
             .Delete => |key| {
                 errdefer {
-                    var end_err_msg: [:0]u8 = undefined;
-                    const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, @ptrCast(&end_err_msg));
+                    var end_err_msg: [*c]u8 = undefined;
+                    const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, &end_err_msg);
                     if (end_code != 0) {
                         std.log.err("Failed to rollback transaction {s}", .{end_err_msg});
                     }
@@ -541,8 +541,8 @@ const StateMachine = struct {
             },
             .DeleteIfExists => |key| {
                 errdefer {
-                    var end_err_msg: [:0]u8 = undefined;
-                    const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, @ptrCast(&end_err_msg));
+                    var end_err_msg: [*c]u8 = undefined;
+                    const end_code = c.sqlite3_exec(self.db, "ROLLBACK TRANSACTION", null, null, &end_err_msg);
                     if (end_code != 0) {
                         std.log.err("Failed to rollback transaction {s}", .{end_err_msg});
                     }
@@ -580,8 +580,8 @@ const StateMachine = struct {
             .Processing => |message| {
                 switch (message) {
                     .Set, .Delete, .DeleteIfExists => {
-                        var end_err_msg: [:0]u8 = undefined;
-                        const end_code = c.sqlite3_exec(self.db, "END TRANSACTION", null, null, @ptrCast(&end_err_msg));
+                        var end_err_msg: [*c]u8 = undefined;
+                        const end_code = c.sqlite3_exec(self.db, "END TRANSACTION", null, null, &end_err_msg);
                         if (end_code != 0) {
                             std.log.err("Failed to end transaction {s}", .{end_err_msg});
                         }
@@ -589,8 +589,8 @@ const StateMachine = struct {
                         _ = c.sqlite3_finalize(self.statement);
                     },
                     .GetOrElseSet => {
-                        var end_err_msg: [:0]u8 = undefined;
-                        const end_code = c.sqlite3_exec(self.db, "END TRANSACTION", null, null, @ptrCast(&end_err_msg));
+                        var end_err_msg: [*c]u8 = undefined;
+                        const end_code = c.sqlite3_exec(self.db, "END TRANSACTION", null, null, &end_err_msg);
                         if (end_code != 0) {
                             std.log.err("Failed to end transaction {s}", .{end_err_msg});
                         }
