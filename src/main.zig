@@ -105,6 +105,26 @@ fn bind_text(
     }
 }
 
+fn bind_blob(
+    db: *c.sqlite3,
+    statement: *c.sqlite3_stmt,
+    column: i32,
+    value: []const u8,
+) !void {
+    const result = c.sqlite3_bind_blob64(
+        statement,
+        column,
+        @ptrCast(value),
+        @intCast(value.len),
+        c.SQLITE_STATIC,
+    );
+
+    if (result != c.SQLITE_OK) {
+        std.log.err("Failed to bind parameter: {s}", .{c.sqlite3_errmsg(db)});
+        return DbError.FailedToExecuteQuery;
+    }
+}
+
 fn printTokenWriter(
     writer: *std.Io.Writer,
     delimiter: u8,
@@ -336,7 +356,7 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
+                    try self.printToken(@as([*]const u8, @ptrCast(c.sqlite3_column_blob(self.statement, 0)))[0..@intCast(c.sqlite3_column_bytes(self.statement, 0))]);
                 } else if (result_code == c.SQLITE_DONE) {
                     std.log.err("No value found for key \"{s}\"", .{key});
                     return DbError.FailedToGetKey;
@@ -356,7 +376,7 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
+                    try self.printToken(@as([*]const u8, @ptrCast(c.sqlite3_column_blob(self.statement, 0)))[0..@intCast(c.sqlite3_column_bytes(self.statement, 0))]);
                 } else if (result_code == c.SQLITE_DONE) {
                     try self.printToken(pair.value);
                 } else {
@@ -385,12 +405,12 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
+                    try self.printToken(@as([*]const u8, @ptrCast(c.sqlite3_column_blob(self.statement, 0)))[0..@intCast(c.sqlite3_column_bytes(self.statement, 0))]);
                 } else if (result_code == c.SQLITE_DONE) {
                     try self.printToken(pair.value);
 
                     try bind_text(self.db, self.extra_statement, 1, pair.key);
-                    try bind_text(self.db, self.extra_statement, 2, pair.value);
+                    try bind_blob(self.db, self.extra_statement, 2, pair.value);
                     const extra_result_code = c.sqlite3_step(self.extra_statement);
 
                     if (extra_result_code != c.SQLITE_DONE) {
@@ -424,7 +444,7 @@ const StateMachine = struct {
                 }
 
                 try bind_text(self.db, self.statement, 1, pair.key);
-                try bind_text(self.db, self.statement, 2, pair.value);
+                try bind_blob(self.db, self.statement, 2, pair.value);
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code != c.SQLITE_DONE) {
@@ -458,7 +478,7 @@ const StateMachine = struct {
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
                     try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
-                    try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 1), 0));
+                    try self.printToken(@as([*]const u8, @ptrCast(c.sqlite3_column_blob(self.statement, 1)))[0..@intCast(c.sqlite3_column_bytes(self.statement, 1))]);
 
                     result_code = c.sqlite3_step(self.statement);
                 }
