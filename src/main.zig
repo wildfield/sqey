@@ -91,12 +91,13 @@ fn bind_text(
     column: i32,
     value: []const u8,
 ) !void {
-    const result = c.sqlite3_bind_text(
+    const result = c.sqlite3_bind_text64(
         statement,
         column,
         @ptrCast(value),
         @intCast(value.len),
         c.SQLITE_STATIC,
+        c.SQLITE_UTF8,
     );
 
     if (result != c.SQLITE_OK) {
@@ -115,7 +116,7 @@ fn bind_blob(
         statement,
         column,
         @ptrCast(value),
-        @intCast(value.len),
+        value.len,
         c.SQLITE_STATIC,
     );
 
@@ -125,6 +126,10 @@ fn bind_blob(
     }
 }
 
+const TokenWriterError = error {
+    SizeTooLarge
+};
+
 fn printTokenWriter(
     writer: *std.Io.Writer,
     delimiter: u8,
@@ -133,7 +138,11 @@ fn printTokenWriter(
     token: []const u8,
 ) !void {
     if (is_binary_format) {
-        _ = try writer.writeInt(u32, @truncate(token.len), .little);
+        if (std.math.cast(u32, token.len)) |len| { 
+            _ = try writer.writeInt(u32, len, .little);
+        } else {
+            return TokenWriterError.SizeTooLarge;
+        }
         _ = try writer.writeAll(token);
     } else if (is_single_entry) {
         _ = try writer.writeAll(token);
@@ -151,7 +160,6 @@ const StateMachine = struct {
     is_single_entry: bool,
     is_reverse_order_output: bool,
     db: *c.sqlite3 = undefined,
-    stdout_writer: *std.fs.File.Writer = undefined,
     statement: *c.sqlite3_stmt = undefined,
     // GetOrElseSet uses 2 statements
     extra_statement: *c.sqlite3_stmt = undefined,
@@ -268,6 +276,7 @@ const StateMachine = struct {
                         const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
                         if (begin_code != 0) {
                             std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
+                            c.sqlite3_free(begin_err_msg);
                             return DbError.FailedToExecuteQuery;
                         }
                     },
@@ -284,6 +293,7 @@ const StateMachine = struct {
                         const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
                         if (begin_code != 0) {
                             std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
+                            c.sqlite3_free(begin_err_msg);
                             return DbError.FailedToExecuteQuery;
                         }
                     },
@@ -339,6 +349,7 @@ const StateMachine = struct {
                         const begin_code = c.sqlite3_exec(self.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
                         if (begin_code != 0) {
                             std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
+                            c.sqlite3_free(begin_err_msg);
                             return DbError.FailedToExecuteQuery;
                         }
                     },
@@ -626,6 +637,10 @@ const ArgIteratorWrapper = struct {
 // Limit entries to 1 MB for sanity checking
 const MAX_STDIN_SIZE = 1024 * 1024;
 
+const DelimiterIteratorError = error {
+    SizeTooLarge
+};
+
 const DelimiterIteratorOptions = struct {
     delimiter: u8,
     is_binary_protocol: bool,
@@ -683,6 +698,8 @@ const DelimiterIterator = struct {
 
                 if (number_bytes >= MAX_STDIN_SIZE) {
                     std.log.err("The length of token is too long: {d}", .{number_bytes});
+                    self.is_done = true;
+                    return DelimiterIteratorError.SizeTooLarge;
                 } else if (number_bytes > 0) {
                     try self.reader.streamExact(&self.input_writer.writer, number_bytes);
                     return self.input_writer.written();
