@@ -520,6 +520,9 @@ const StateMachine = struct {
                     std.log.err("Failed to list keys: {s}", .{c.sqlite3_errmsg(self.db)});
                     return DbError.FailedToExecuteQuery;
                 }
+
+                _ = c.sqlite3_finalize(self.statement);
+                self.current_state = .{ .Invalid = undefined };
             },
             .Delete => |key| {
                 errdefer {
@@ -918,7 +921,7 @@ pub fn parseCommand(
     str: []const u8,
     is_stdin: bool,
 ) !MessageType {
-    return if (std.mem.eql(u8, str, "get")) {
+    if (std.mem.eql(u8, str, "get")) {
         return MessageType.Get;
     } else if (std.mem.eql(u8, str, "get-or-else")) {
         return MessageType.GetOrElse;
@@ -946,7 +949,7 @@ pub fn parseCommand(
     } else {
         std.log.err("Unknown command. Possible commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin", .{});
         return CommandError.InvalidCommand;
-    };
+    }
 }
 
 // Temporarily stores the slice in the writer buffer
