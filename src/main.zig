@@ -955,12 +955,19 @@ pub fn parseCommand(
 // Temporarily stores the slice in the writer buffer
 // Clears the writer before using
 fn tempBuffered(
+    comptime is_stdin: bool,
     writer: *std.Io.Writer.Allocating,
     slice: []const u8,
 ) ![]const u8 {
-    writer.clearRetainingCapacity();
-    _ = try writer.writer.write(slice);
-    return writer.written();
+    // Stdin iterator returns slice that is valid only for one iteration
+    // Non-stdin (arg) iterator returns slice pointing to the internal buffer, therefore no need to copy again
+    if (is_stdin) {
+        writer.clearRetainingCapacity();
+        _ = try writer.writer.write(slice);
+        return writer.written();
+    } else {
+        return slice;
+    }
 }
 
 pub fn processArgs(
@@ -1009,7 +1016,7 @@ pub fn processArgs(
         .GetOrElse => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                const key = try tempBuffered(&key_buffer, raw_key);
+                const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
@@ -1034,7 +1041,7 @@ pub fn processArgs(
         .GetOrElseSet => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                const key = try tempBuffered(&key_buffer, raw_key);
+                const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
@@ -1059,7 +1066,7 @@ pub fn processArgs(
         .Set => {
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
-                const key = try tempBuffered(&key_buffer, raw_key);
+                const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing value for key \"{s}\"", .{key});
@@ -1115,7 +1122,7 @@ pub fn processArgs(
                 return 1;
             };
 
-            const pattern = try tempBuffered(&key_buffer, raw_pattern);
+            const pattern = try tempBuffered(is_stdin, &key_buffer, raw_pattern);
 
             if (try args.next()) |_| {
                 std.log.err("\"keys-like\" command doesn't accept any extra arguments after the pattern", .{});
