@@ -632,6 +632,8 @@ const StateMachine = struct {
 const ArgIteratorWrapper = struct {
     iterator: *std.process.ArgIterator,
 
+    // This converts ?[]const u8 to !?[]const u8 such that we can use try with it
+    // it is needed to make interface consistent between ArgIterator and DelimiterIterator
     fn next(self: *const ArgIteratorWrapper) !?[]const u8 {
         return self.iterator.next();
     }
