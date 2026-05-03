@@ -11,6 +11,7 @@ const DbError = error{
     FailedToWrite,
     FailedToGetKey,
     FailedToDeleteKey,
+    UnexpectedNullEntry,
 };
 
 const MessageType = enum {
@@ -187,7 +188,7 @@ const StateMachine = struct {
             var error_msg: [*c]u8 = undefined;
             const failure2 = c.sqlite3_exec(
                 db,
-                "CREATE TABLE IF NOT EXISTS data(id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE, value BLOB)",
+                "CREATE TABLE IF NOT EXISTS data(id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE NOT NULL, value BLOB NOT NULL)",
                 null,
                 null,
                 &error_msg,
@@ -218,8 +219,13 @@ const StateMachine = struct {
         );
     }
 
-    fn getColumnBlob(self: StateMachine, column: c_int) []const u8 {
-        return @as([*]const u8, @ptrCast(c.sqlite3_column_blob(self.statement, column)))[0..@intCast(c.sqlite3_column_bytes(self.statement, column))];
+    fn getColumnBlob(self: StateMachine, column: c_int) ![]const u8 {
+        const blob_ptr: ?[*c]const u8 = @ptrCast(c.sqlite3_column_blob(self.statement, column));
+        if (blob_ptr) |ptr| {
+            return ptr[0..@intCast(c.sqlite3_column_bytes(self.statement, column))];
+        } else {
+            return DbError.UnexpectedNullEntry;
+        }
     }
 
     fn process(self: *StateMachine, message: Message) !void {
@@ -371,7 +377,7 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    try self.printToken(self.getColumnBlob(0));
+                    try self.printToken(try self.getColumnBlob(0));
                 } else if (result_code == c.SQLITE_DONE) {
                     std.log.err("No value found for key \"{s}\"", .{key});
                     return DbError.FailedToGetKey;
@@ -391,7 +397,7 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    try self.printToken(self.getColumnBlob(0));
+                    try self.printToken(try self.getColumnBlob(0));
                 } else if (result_code == c.SQLITE_DONE) {
                     try self.printToken(pair.value);
                 } else {
@@ -420,7 +426,7 @@ const StateMachine = struct {
 
                 const result_code = c.sqlite3_step(self.statement);
                 if (result_code == c.SQLITE_ROW) {
-                    try self.printToken(self.getColumnBlob(0));
+                    try self.printToken(try self.getColumnBlob(0));
                 } else if (result_code == c.SQLITE_DONE) {
                     try self.printToken(pair.value);
 
@@ -493,7 +499,7 @@ const StateMachine = struct {
                 var result_code = c.sqlite3_step(self.statement);
                 while (result_code == c.SQLITE_ROW) {
                     try self.printToken(std.mem.sliceTo(c.sqlite3_column_text(self.statement, 0), 0));
-                    try self.printToken(self.getColumnBlob(1));
+                    try self.printToken(try self.getColumnBlob(1));
 
                     result_code = c.sqlite3_step(self.statement);
                 }
