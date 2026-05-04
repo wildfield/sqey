@@ -220,7 +220,7 @@ const StateMachine = struct {
     }
 
     fn getColumnBlob(self: StateMachine, column: c_int) ![]const u8 {
-        const blob_ptr: ?[*c]const u8 = @ptrCast(c.sqlite3_column_blob(self.statement, column));
+        const blob_ptr: ?[*]const u8 = @ptrCast(c.sqlite3_column_blob(self.statement, column));
         if (blob_ptr) |ptr| {
             return ptr[0..@intCast(c.sqlite3_column_bytes(self.statement, column))];
         } else {
