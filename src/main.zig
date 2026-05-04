@@ -311,7 +311,19 @@ const GetOrElseHandler = struct {
 const GetOrElseSetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     extra_statement: ?*c.sqlite3_stmt = null,
-    committed: bool = false,
+    is_transaction_active: bool = false,
+
+    fn rollback(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            var rollback_err_msg: [*c]u8 = undefined;
+            const rollback_code = c.sqlite3_exec(sm.db, "ROLLBACK TRANSACTION", null, null, &rollback_err_msg);
+            if (rollback_code != 0) {
+                std.log.err("Failed to rollback transaction: {s}", .{rollback_err_msg});
+                c.sqlite3_free(rollback_err_msg);
+            }
+        }
+    }
 
     fn process(self: *GetOrElseSetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.statement == null) {
@@ -328,6 +340,8 @@ const GetOrElseSetHandler = struct {
                 c.sqlite3_free(begin_err_msg);
                 return DbError.FailedToExecuteQuery;
             }
+            self.is_transaction_active = true;
+            errdefer self.rollback(sm);
         }
 
         defer {
@@ -368,8 +382,8 @@ const GetOrElseSetHandler = struct {
     }
 
     fn close(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
-        if (!self.committed) {
-            self.committed = true;
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
             var commit_err_msg: [*c]u8 = undefined;
             const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
             if (commit_code != 0) {
@@ -389,7 +403,19 @@ const GetOrElseSetHandler = struct {
 // --- SetHandler ---
 const SetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
-    committed: bool = false,
+    is_transaction_active: bool = false,
+
+    fn rollback(self: *SetHandler, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            var rollback_err_msg: [*c]u8 = undefined;
+            const rollback_code = c.sqlite3_exec(sm.db, "ROLLBACK TRANSACTION", null, null, &rollback_err_msg);
+            if (rollback_code != 0) {
+                std.log.err("Failed to rollback transaction: {s}", .{rollback_err_msg});
+                c.sqlite3_free(rollback_err_msg);
+            }
+        }
+    }
 
     fn process(self: *SetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.statement == null) {
@@ -405,6 +431,8 @@ const SetHandler = struct {
                 c.sqlite3_free(begin_err_msg);
                 return DbError.FailedToExecuteQuery;
             }
+            self.is_transaction_active = true;
+            errdefer self.rollback(sm);
         }
 
         defer {
@@ -425,8 +453,8 @@ const SetHandler = struct {
     }
 
     fn close(self: *SetHandler, sm: *DatabaseStateManager) void {
-        if (!self.committed) {
-            self.committed = true;
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
             var commit_err_msg: [*c]u8 = undefined;
             const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
             if (commit_code != 0) {
@@ -531,7 +559,19 @@ const KeysLikeHandler = struct {
 // --- DeleteHandler ---
 const DeleteHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
-    committed: bool = false,
+    is_transaction_active: bool = false,
+
+    fn rollback(self: *DeleteHandler, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            var rollback_err_msg: [*c]u8 = undefined;
+            const rollback_code = c.sqlite3_exec(sm.db, "ROLLBACK TRANSACTION", null, null, &rollback_err_msg);
+            if (rollback_code != 0) {
+                std.log.err("Failed to rollback transaction: {s}", .{rollback_err_msg});
+                c.sqlite3_free(rollback_err_msg);
+            }
+        }
+    }
 
     fn process(self: *DeleteHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
@@ -544,6 +584,8 @@ const DeleteHandler = struct {
                 c.sqlite3_free(begin_err_msg);
                 return DbError.FailedToExecuteQuery;
             }
+            self.is_transaction_active = true;
+            errdefer self.rollback(sm);
         }
 
         defer {
@@ -569,8 +611,8 @@ const DeleteHandler = struct {
     }
 
     fn close(self: *DeleteHandler, sm: *DatabaseStateManager) void {
-        if (!self.committed) {
-            self.committed = true;
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
             var commit_err_msg: [*c]u8 = undefined;
             const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
             if (commit_code != 0) {
@@ -587,7 +629,19 @@ const DeleteHandler = struct {
 // --- DeleteIfExistsHandler ---
 const DeleteIfExistsHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
-    committed: bool = false,
+    is_transaction_active: bool = false,
+
+    fn rollback(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            var rollback_err_msg: [*c]u8 = undefined;
+            const rollback_code = c.sqlite3_exec(sm.db, "ROLLBACK TRANSACTION", null, null, &rollback_err_msg);
+            if (rollback_code != 0) {
+                std.log.err("Failed to rollback transaction: {s}", .{rollback_err_msg});
+                c.sqlite3_free(rollback_err_msg);
+            }
+        }
+    }
 
     fn process(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
@@ -600,6 +654,8 @@ const DeleteIfExistsHandler = struct {
                 c.sqlite3_free(begin_err_msg);
                 return DbError.FailedToExecuteQuery;
             }
+            self.is_transaction_active = true;
+            errdefer self.rollback(sm);
         }
 
         defer {
@@ -620,8 +676,8 @@ const DeleteIfExistsHandler = struct {
     }
 
     fn close(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
-        if (!self.committed) {
-            self.committed = true;
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
             var commit_err_msg: [*c]u8 = undefined;
             const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
             if (commit_code != 0) {
@@ -1043,27 +1099,33 @@ pub fn processArgs(
         .GetOrElseSet => {
             var handler: GetOrElseSetHandler = .{};
             var did_receive_valid_arg = false;
-            while (try args.next()) |raw_key| {
-                const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+            const sqey_result: u8 = (blk: {
+                while (try args.next()) |raw_key| {
+                    const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
 
-                const value = try args.next() orelse {
-                    std.log.err("Missing default value for key \"{s}\"", .{key});
-                    handler.close(state_manager);
-                    return 1;
-                };
+                    const value = try args.next() orelse {
+                        std.log.err("Missing default value for key \"{s}\"", .{key});
+                        break :blk 1;
+                    };
 
-                if (!did_receive_valid_arg) {
-                    did_receive_valid_arg = true;
-                    try state_manager.open(filepath, true);
-                } else if (options.is_single_entry) {
-                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    handler.close(state_manager);
-                    return 1;
+                    if (!did_receive_valid_arg) {
+                        did_receive_valid_arg = true;
+                        try state_manager.open(filepath, true);
+                    } else if (options.is_single_entry) {
+                        std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                        break :blk 1;
+                    }
+
+                    errdefer {
+                        handler.rollback(state_manager);
+                        handler.close(state_manager);
+                    }
+                    try handler.process(state_manager, .{ .key = key, .value = value });
                 }
-
-                try handler.process(state_manager, .{ .key = key, .value = value });
-            }
+                break :blk 0;
+            });
             handler.close(state_manager);
+            if (sqey_result != 0) return sqey_result;
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else-set command", .{});
                 return 1;
@@ -1072,27 +1134,33 @@ pub fn processArgs(
         .Set => {
             var handler: SetHandler = .{};
             var did_receive_valid_arg = false;
-            while (try args.next()) |raw_key| {
-                const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+            const sqey_result: u8 = (blk: {
+                while (try args.next()) |raw_key| {
+                    const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
 
-                const value = try args.next() orelse {
-                    std.log.err("Missing value for key \"{s}\"", .{key});
-                    handler.close(state_manager);
-                    return 1;
-                };
+                    const value = try args.next() orelse {
+                        std.log.err("Missing value for key \"{s}\"", .{key});
+                        break :blk 1;
+                    };
 
-                if (!did_receive_valid_arg) {
-                    did_receive_valid_arg = true;
-                    try state_manager.open(filepath, true);
-                } else if (options.is_single_entry) {
-                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    handler.close(state_manager);
-                    return 1;
+                    if (!did_receive_valid_arg) {
+                        did_receive_valid_arg = true;
+                        try state_manager.open(filepath, true);
+                    } else if (options.is_single_entry) {
+                        std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                        break :blk 1;
+                    }
+
+                    errdefer {
+                        handler.rollback(state_manager);
+                        handler.close(state_manager);
+                    }
+                    try handler.process(state_manager, .{ .key = key, .value = value });
                 }
-
-                try handler.process(state_manager, .{ .key = key, .value = value });
-            }
+                break :blk 0;
+            });
             handler.close(state_manager);
+            if (sqey_result != 0) return sqey_result;
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for set command", .{});
                 return 1;
@@ -1145,19 +1213,26 @@ pub fn processArgs(
         .Delete => {
             var handler: DeleteHandler = .{};
             var did_receive_valid_arg = false;
-            while (try args.next()) |key| {
-                if (!did_receive_valid_arg) {
-                    did_receive_valid_arg = true;
-                    try state_manager.open(filepath, false);
-                } else if (options.is_single_entry) {
-                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    handler.close(state_manager);
-                    return 1;
-                }
+            const sqey_result: u8 = (blk: {
+                while (try args.next()) |key| {
+                    if (!did_receive_valid_arg) {
+                        did_receive_valid_arg = true;
+                        try state_manager.open(filepath, false);
+                    } else if (options.is_single_entry) {
+                        std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                        break :blk 1;
+                    }
 
-                try handler.process(state_manager, key);
-            }
+                    errdefer {
+                        handler.rollback(state_manager);
+                        handler.close(state_manager);
+                    }
+                    try handler.process(state_manager, key);
+                }
+                break :blk 0;
+            });
             handler.close(state_manager);
+            if (sqey_result != 0) return sqey_result;
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for delete command", .{});
                 return 1;
@@ -1166,19 +1241,26 @@ pub fn processArgs(
         .DeleteIfExists => {
             var handler: DeleteIfExistsHandler = .{};
             var did_receive_valid_arg = false;
-            while (try args.next()) |key| {
-                if (!did_receive_valid_arg) {
-                    did_receive_valid_arg = true;
-                    try state_manager.open(filepath, true);
-                } else if (options.is_single_entry) {
-                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    handler.close(state_manager);
-                    return 1;
-                }
+            const sqey_result: u8 = (blk: {
+                while (try args.next()) |key| {
+                    if (!did_receive_valid_arg) {
+                        did_receive_valid_arg = true;
+                        try state_manager.open(filepath, true);
+                    } else if (options.is_single_entry) {
+                        std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                        break :blk 1;
+                    }
 
-                try handler.process(state_manager, key);
-            }
+                    errdefer {
+                        handler.rollback(state_manager);
+                        handler.close(state_manager);
+                    }
+                    try handler.process(state_manager, key);
+                }
+                break :blk 0;
+            });
             handler.close(state_manager);
+            if (sqey_result != 0) return sqey_result;
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for \"delete-if-exists\" command", .{});
                 return 1;
