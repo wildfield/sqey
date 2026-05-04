@@ -335,7 +335,6 @@ const GetOrElseSetHandler = struct {
                 const reset_code = c.sqlite3_reset(stmt);
                 if (reset_code != c.SQLITE_OK) {
                     std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(sm.db)});
-                    // cannot return error from defer, transaction will be rolled back on close
                 }
             }
             if (self.extra_statement) |stmt| {
@@ -372,7 +371,7 @@ const GetOrElseSetHandler = struct {
         if (!self.committed) {
             self.committed = true;
             var commit_err_msg: [*c]u8 = undefined;
-            const commit_code = c.sqlite3_exec(sm.db, "COMMIT", null, null, &commit_err_msg);
+            const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
             if (commit_code != 0) {
                 std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
                 c.sqlite3_free(commit_err_msg);
@@ -429,7 +428,7 @@ const SetHandler = struct {
         if (!self.committed) {
             self.committed = true;
             var commit_err_msg: [*c]u8 = undefined;
-            const commit_code = c.sqlite3_exec(sm.db, "COMMIT", null, null, &commit_err_msg);
+            const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
             if (commit_code != 0) {
                 std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
                 c.sqlite3_free(commit_err_msg);
@@ -573,7 +572,7 @@ const DeleteHandler = struct {
         if (!self.committed) {
             self.committed = true;
             var commit_err_msg: [*c]u8 = undefined;
-            const commit_code = c.sqlite3_exec(sm.db, "COMMIT", null, null, &commit_err_msg);
+            const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
             if (commit_code != 0) {
                 std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
                 c.sqlite3_free(commit_err_msg);
@@ -624,7 +623,7 @@ const DeleteIfExistsHandler = struct {
         if (!self.committed) {
             self.committed = true;
             var commit_err_msg: [*c]u8 = undefined;
-            const commit_code = c.sqlite3_exec(sm.db, "COMMIT", null, null, &commit_err_msg);
+            const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
             if (commit_code != 0) {
                 std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
                 c.sqlite3_free(commit_err_msg);
