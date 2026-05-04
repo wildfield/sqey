@@ -56,7 +56,7 @@ const DatabaseState = enum {
     Closed,
 };
 
-fn prepare_statement(
+fn prepareStatement(
     db: *c.sqlite3,
     query: []const u8,
 ) !*c.sqlite3_stmt {
@@ -75,7 +75,7 @@ fn prepare_statement(
     return statement;
 }
 
-fn bind_text(
+fn bindText(
     db: *c.sqlite3,
     statement: *c.sqlite3_stmt,
     column: i32,
@@ -96,7 +96,7 @@ fn bind_text(
     }
 }
 
-fn bind_blob(
+fn bindBlob(
     db: *c.sqlite3,
     statement: *c.sqlite3_stmt,
     column: i32,
@@ -242,7 +242,7 @@ const GetHandler = struct {
 
     fn process(self: *GetHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
-            self.statement = try prepare_statement(sm.db, "SELECT value FROM data WHERE key = ?");
+            self.statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
         }
         defer {
             const reset_code = c.sqlite3_reset(self.statement.?);
@@ -251,7 +251,7 @@ const GetHandler = struct {
             }
         }
 
-        try bind_text(sm.db, self.statement.?, 1, key);
+        try bindText(sm.db, self.statement.?, 1, key);
 
         const result_code = c.sqlite3_step(self.statement.?);
         if (result_code == c.SQLITE_ROW) {
@@ -278,7 +278,7 @@ const GetOrElseHandler = struct {
 
     fn process(self: *GetOrElseHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.statement == null) {
-            self.statement = try prepare_statement(sm.db, "SELECT value FROM data WHERE key = ?");
+            self.statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
         }
         defer {
             const reset_code = c.sqlite3_reset(self.statement.?);
@@ -287,7 +287,7 @@ const GetOrElseHandler = struct {
             }
         }
 
-        try bind_text(sm.db, self.statement.?, 1, pair.key);
+        try bindText(sm.db, self.statement.?, 1, pair.key);
 
         const result_code = c.sqlite3_step(self.statement.?);
         if (result_code == c.SQLITE_ROW) {
@@ -311,11 +311,12 @@ const GetOrElseHandler = struct {
 const GetOrElseSetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     extra_statement: ?*c.sqlite3_stmt = null,
+    committed: bool = false,
 
     fn process(self: *GetOrElseSetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.statement == null) {
-            self.statement = try prepare_statement(sm.db, "SELECT value FROM data WHERE key = ?");
-            self.extra_statement = try prepare_statement(
+            self.statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
+            self.extra_statement = try prepareStatement(
                 sm.db,
                 "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
             );
@@ -345,7 +346,7 @@ const GetOrElseSetHandler = struct {
             }
         }
 
-        try bind_text(sm.db, self.statement.?, 1, pair.key);
+        try bindText(sm.db, self.statement.?, 1, pair.key);
 
         const result_code = c.sqlite3_step(self.statement.?);
         if (result_code == c.SQLITE_ROW) {
@@ -353,8 +354,8 @@ const GetOrElseSetHandler = struct {
         } else if (result_code == c.SQLITE_DONE) {
             try sm.printToken(pair.value);
 
-            try bind_text(sm.db, self.extra_statement.?, 1, pair.key);
-            try bind_blob(sm.db, self.extra_statement.?, 2, pair.value);
+            try bindText(sm.db, self.extra_statement.?, 1, pair.key);
+            try bindBlob(sm.db, self.extra_statement.?, 2, pair.value);
             const extra_result_code = c.sqlite3_step(self.extra_statement.?);
 
             if (extra_result_code != c.SQLITE_DONE) {
@@ -367,7 +368,16 @@ const GetOrElseSetHandler = struct {
         }
     }
 
-    fn close(self: *GetOrElseSetHandler) void {
+    fn close(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
+        if (!self.committed) {
+            self.committed = true;
+            var commit_err_msg: [*c]u8 = undefined;
+            const commit_code = c.sqlite3_exec(sm.db, "COMMIT", null, null, &commit_err_msg);
+            if (commit_code != 0) {
+                std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
+                c.sqlite3_free(commit_err_msg);
+            }
+        }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -380,10 +390,11 @@ const GetOrElseSetHandler = struct {
 // --- SetHandler ---
 const SetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
+    committed: bool = false,
 
     fn process(self: *SetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.statement == null) {
-            self.statement = try prepare_statement(
+            self.statement = try prepareStatement(
                 sm.db,
                 "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
             );
@@ -404,8 +415,8 @@ const SetHandler = struct {
             }
         }
 
-        try bind_text(sm.db, self.statement.?, 1, pair.key);
-        try bind_blob(sm.db, self.statement.?, 2, pair.value);
+        try bindText(sm.db, self.statement.?, 1, pair.key);
+        try bindBlob(sm.db, self.statement.?, 2, pair.value);
 
         const result_code = c.sqlite3_step(self.statement.?);
         if (result_code != c.SQLITE_DONE) {
@@ -414,8 +425,16 @@ const SetHandler = struct {
         }
     }
 
-    fn close(self: *SetHandler) void {
-        // finalize() implicitly commits the active transaction
+    fn close(self: *SetHandler, sm: *DatabaseStateManager) void {
+        if (!self.committed) {
+            self.committed = true;
+            var commit_err_msg: [*c]u8 = undefined;
+            const commit_code = c.sqlite3_exec(sm.db, "COMMIT", null, null, &commit_err_msg);
+            if (commit_code != 0) {
+                std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
+                c.sqlite3_free(commit_err_msg);
+            }
+        }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -431,7 +450,7 @@ const KeysHandler = struct {
         var statement_str_buf: [statement_str_pattern.len + 1]u8 = undefined;
         const statement_str = try std.fmt.bufPrint(&statement_str_buf, statement_str_pattern, .{order});
 
-        const statement: *c.sqlite3_stmt = try prepare_statement(sm.db, statement_str);
+        const statement: *c.sqlite3_stmt = try prepareStatement(sm.db, statement_str);
         errdefer _ = c.sqlite3_finalize(statement);
 
         var result_code = c.sqlite3_step(statement);
@@ -459,7 +478,7 @@ const KeyValuesHandler = struct {
         var statement_str_buf: [statement_str_pattern.len + 1]u8 = undefined;
         const statement_str = try std.fmt.bufPrint(&statement_str_buf, statement_str_pattern, .{order});
 
-        const statement: *c.sqlite3_stmt = try prepare_statement(sm.db, statement_str);
+        const statement: *c.sqlite3_stmt = try prepareStatement(sm.db, statement_str);
         errdefer _ = c.sqlite3_finalize(statement);
 
         var result_code = c.sqlite3_step(statement);
@@ -490,10 +509,10 @@ const KeysLikeHandler = struct {
         var statement_str_buf: [statement_str_pattern.len + 1]u8 = undefined;
         const statement_str = try std.fmt.bufPrint(&statement_str_buf, statement_str_pattern, .{order});
 
-        const statement: *c.sqlite3_stmt = try prepare_statement(sm.db, statement_str);
+        const statement: *c.sqlite3_stmt = try prepareStatement(sm.db, statement_str);
         errdefer _ = c.sqlite3_finalize(statement);
 
-        try bind_text(sm.db, statement, 1, pattern);
+        try bindText(sm.db, statement, 1, pattern);
 
         var result_code = c.sqlite3_step(statement);
         while (result_code == c.SQLITE_ROW) {
@@ -513,10 +532,11 @@ const KeysLikeHandler = struct {
 // --- DeleteHandler ---
 const DeleteHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
+    committed: bool = false,
 
     fn process(self: *DeleteHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
-            self.statement = try prepare_statement(sm.db, "DELETE FROM data WHERE key = ?");
+            self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
 
             var begin_err_msg: [*c]u8 = undefined;
             const begin_code = c.sqlite3_exec(sm.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
@@ -534,7 +554,7 @@ const DeleteHandler = struct {
             }
         }
 
-        try bind_text(sm.db, self.statement.?, 1, key);
+        try bindText(sm.db, self.statement.?, 1, key);
 
         const result_code = c.sqlite3_step(self.statement.?);
         if (result_code != c.SQLITE_DONE) {
@@ -549,8 +569,16 @@ const DeleteHandler = struct {
         }
     }
 
-    fn close(self: *DeleteHandler) void {
-        // finalize() implicitly commits the active transaction
+    fn close(self: *DeleteHandler, sm: *DatabaseStateManager) void {
+        if (!self.committed) {
+            self.committed = true;
+            var commit_err_msg: [*c]u8 = undefined;
+            const commit_code = c.sqlite3_exec(sm.db, "COMMIT", null, null, &commit_err_msg);
+            if (commit_code != 0) {
+                std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
+                c.sqlite3_free(commit_err_msg);
+            }
+        }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -560,10 +588,11 @@ const DeleteHandler = struct {
 // --- DeleteIfExistsHandler ---
 const DeleteIfExistsHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
+    committed: bool = false,
 
     fn process(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
-            self.statement = try prepare_statement(sm.db, "DELETE FROM data WHERE key = ?");
+            self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
 
             var begin_err_msg: [*c]u8 = undefined;
             const begin_code = c.sqlite3_exec(sm.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
@@ -582,7 +611,7 @@ const DeleteIfExistsHandler = struct {
             }
         }
 
-        try bind_text(sm.db, self.statement.?, 1, key);
+        try bindText(sm.db, self.statement.?, 1, key);
 
         const result_code = c.sqlite3_step(self.statement.?);
         if (result_code != c.SQLITE_DONE) {
@@ -591,8 +620,16 @@ const DeleteIfExistsHandler = struct {
         }
     }
 
-    fn close(self: *DeleteIfExistsHandler) void {
-        // finalize() implicitly commits the active transaction
+    fn close(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
+        if (!self.committed) {
+            self.committed = true;
+            var commit_err_msg: [*c]u8 = undefined;
+            const commit_code = c.sqlite3_exec(sm.db, "COMMIT", null, null, &commit_err_msg);
+            if (commit_code != 0) {
+                std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
+                c.sqlite3_free(commit_err_msg);
+            }
+        }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -1012,7 +1049,7 @@ pub fn processArgs(
 
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
-                    handler.close();
+                    handler.close(state_manager);
                     return 1;
                 };
 
@@ -1021,13 +1058,13 @@ pub fn processArgs(
                     try state_manager.open(filepath, true);
                 } else if (options.is_single_entry) {
                     std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    handler.close();
+                    handler.close(state_manager);
                     return 1;
                 }
 
                 try handler.process(state_manager, .{ .key = key, .value = value });
             }
-            handler.close();
+            handler.close(state_manager);
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else-set command", .{});
                 return 1;
@@ -1041,7 +1078,7 @@ pub fn processArgs(
 
                 const value = try args.next() orelse {
                     std.log.err("Missing value for key \"{s}\"", .{key});
-                    handler.close();
+                    handler.close(state_manager);
                     return 1;
                 };
 
@@ -1050,13 +1087,13 @@ pub fn processArgs(
                     try state_manager.open(filepath, true);
                 } else if (options.is_single_entry) {
                     std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    handler.close();
+                    handler.close(state_manager);
                     return 1;
                 }
 
                 try handler.process(state_manager, .{ .key = key, .value = value });
             }
-            handler.close();
+            handler.close(state_manager);
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for set command", .{});
                 return 1;
@@ -1115,13 +1152,13 @@ pub fn processArgs(
                     try state_manager.open(filepath, false);
                 } else if (options.is_single_entry) {
                     std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    handler.close();
+                    handler.close(state_manager);
                     return 1;
                 }
 
                 try handler.process(state_manager, key);
             }
-            handler.close();
+            handler.close(state_manager);
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for delete command", .{});
                 return 1;
@@ -1136,13 +1173,13 @@ pub fn processArgs(
                     try state_manager.open(filepath, true);
                 } else if (options.is_single_entry) {
                     std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    handler.close();
+                    handler.close(state_manager);
                     return 1;
                 }
 
                 try handler.process(state_manager, key);
             }
-            handler.close();
+            handler.close(state_manager);
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for \"delete-if-exists\" command", .{});
                 return 1;
