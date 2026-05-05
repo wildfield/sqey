@@ -316,12 +316,7 @@ const GetOrElseSetHandler = struct {
     fn rollback(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            var rollback_err_msg: [*c]u8 = undefined;
-            const rollback_code = c.sqlite3_exec(sm.db, "ROLLBACK TRANSACTION", null, null, &rollback_err_msg);
-            if (rollback_code != 0) {
-                std.log.err("Failed to rollback transaction: {s}", .{rollback_err_msg});
-                c.sqlite3_free(rollback_err_msg);
-            }
+            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
         }
     }
 
@@ -333,13 +328,7 @@ const GetOrElseSetHandler = struct {
                 "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
             );
 
-            var begin_err_msg: [*c]u8 = undefined;
-            const begin_code = c.sqlite3_exec(sm.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
-            if (begin_code != 0) {
-                std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
-                c.sqlite3_free(begin_err_msg);
-                return DbError.FailedToExecuteQuery;
-            }
+            try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
             self.is_transaction_active = true;
             errdefer self.rollback(sm);
         }
@@ -384,12 +373,7 @@ const GetOrElseSetHandler = struct {
     fn close(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            var commit_err_msg: [*c]u8 = undefined;
-            const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
-            if (commit_code != 0) {
-                std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
-                c.sqlite3_free(commit_err_msg);
-            }
+            sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction: {s}") catch {};
         }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
@@ -408,12 +392,7 @@ const SetHandler = struct {
     fn rollback(self: *SetHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            var rollback_err_msg: [*c]u8 = undefined;
-            const rollback_code = c.sqlite3_exec(sm.db, "ROLLBACK TRANSACTION", null, null, &rollback_err_msg);
-            if (rollback_code != 0) {
-                std.log.err("Failed to rollback transaction: {s}", .{rollback_err_msg});
-                c.sqlite3_free(rollback_err_msg);
-            }
+            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
         }
     }
 
@@ -424,13 +403,7 @@ const SetHandler = struct {
                 "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
             );
 
-            var begin_err_msg: [*c]u8 = undefined;
-            const begin_code = c.sqlite3_exec(sm.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
-            if (begin_code != 0) {
-                std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
-                c.sqlite3_free(begin_err_msg);
-                return DbError.FailedToExecuteQuery;
-            }
+            try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
             self.is_transaction_active = true;
             errdefer self.rollback(sm);
         }
@@ -455,12 +428,7 @@ const SetHandler = struct {
     fn close(self: *SetHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            var commit_err_msg: [*c]u8 = undefined;
-            const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
-            if (commit_code != 0) {
-                std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
-                c.sqlite3_free(commit_err_msg);
-            }
+            sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction: {s}") catch {};
         }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
@@ -470,7 +438,7 @@ const SetHandler = struct {
 
 // --- KeysHandler ---
 const KeysHandler = struct {
-    fn process(sm: *DatabaseStateManager) !void {
+    fn run(sm: *DatabaseStateManager) !void {
         const order = if (!sm.is_reverse_order_output) "ASC" else "DESC";
 
         const statement_str_pattern = "SELECT key FROM data ORDER BY id {s}";
@@ -497,7 +465,7 @@ const KeysHandler = struct {
 
 // --- KeyValuesHandler ---
 const KeyValuesHandler = struct {
-    fn process(sm: *DatabaseStateManager) !void {
+    fn run(sm: *DatabaseStateManager) !void {
         const is_reverse = sm.is_reverse_order_output;
         const order: []const u8 = if (!is_reverse) "ASC" else "DESC";
 
@@ -528,7 +496,7 @@ const KeyValuesHandler = struct {
 
 // --- KeysLikeHandler ---
 const KeysLikeHandler = struct {
-    fn process(sm: *DatabaseStateManager, pattern: []const u8) !void {
+    fn run(sm: *DatabaseStateManager, pattern: []const u8) !void {
         const is_reverse = sm.is_reverse_order_output;
         const order: []const u8 = if (!is_reverse) "ASC" else "DESC";
 
@@ -556,6 +524,21 @@ const KeysLikeHandler = struct {
     }
 };
 
+// Executes simple statements that do not return values or take parameters
+// `format` must take a single `{s}` as a format argument
+fn sqlite3SimpleExec(
+    db: ?*c.sqlite3,
+    sql: [*c]const u8,
+    comptime format: []const u8,
+) !void {
+    var rollback_err_msg: [*c]u8 = undefined;
+    const rollback_code = c.sqlite3_exec(db, sql, null, null, &rollback_err_msg);
+    if (rollback_code != 0) {
+        std.log.err(format, .{rollback_err_msg});
+        c.sqlite3_free(rollback_err_msg);
+    }
+}
+
 // --- DeleteHandler ---
 const DeleteHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
@@ -564,12 +547,7 @@ const DeleteHandler = struct {
     fn rollback(self: *DeleteHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            var rollback_err_msg: [*c]u8 = undefined;
-            const rollback_code = c.sqlite3_exec(sm.db, "ROLLBACK TRANSACTION", null, null, &rollback_err_msg);
-            if (rollback_code != 0) {
-                std.log.err("Failed to rollback transaction: {s}", .{rollback_err_msg});
-                c.sqlite3_free(rollback_err_msg);
-            }
+            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
         }
     }
 
@@ -577,13 +555,7 @@ const DeleteHandler = struct {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
 
-            var begin_err_msg: [*c]u8 = undefined;
-            const begin_code = c.sqlite3_exec(sm.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
-            if (begin_code != 0) {
-                std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
-                c.sqlite3_free(begin_err_msg);
-                return DbError.FailedToExecuteQuery;
-            }
+            try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
             self.is_transaction_active = true;
             errdefer self.rollback(sm);
         }
@@ -613,12 +585,7 @@ const DeleteHandler = struct {
     fn close(self: *DeleteHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            var commit_err_msg: [*c]u8 = undefined;
-            const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
-            if (commit_code != 0) {
-                std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
-                c.sqlite3_free(commit_err_msg);
-            }
+            sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction: {s}") catch {};
         }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
@@ -634,12 +601,7 @@ const DeleteIfExistsHandler = struct {
     fn rollback(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            var rollback_err_msg: [*c]u8 = undefined;
-            const rollback_code = c.sqlite3_exec(sm.db, "ROLLBACK TRANSACTION", null, null, &rollback_err_msg);
-            if (rollback_code != 0) {
-                std.log.err("Failed to rollback transaction: {s}", .{rollback_err_msg});
-                c.sqlite3_free(rollback_err_msg);
-            }
+            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
         }
     }
 
@@ -647,13 +609,7 @@ const DeleteIfExistsHandler = struct {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
 
-            var begin_err_msg: [*c]u8 = undefined;
-            const begin_code = c.sqlite3_exec(sm.db, "BEGIN TRANSACTION", null, null, &begin_err_msg);
-            if (begin_code != 0) {
-                std.log.err("Failed to begin transaction {s}", .{begin_err_msg});
-                c.sqlite3_free(begin_err_msg);
-                return DbError.FailedToExecuteQuery;
-            }
+            try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
             self.is_transaction_active = true;
             errdefer self.rollback(sm);
         }
@@ -678,12 +634,7 @@ const DeleteIfExistsHandler = struct {
     fn close(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            var commit_err_msg: [*c]u8 = undefined;
-            const commit_code = c.sqlite3_exec(sm.db, "COMMIT TRANSACTION", null, null, &commit_err_msg);
-            if (commit_code != 0) {
-                std.log.err("Failed to commit transaction: {s}", .{commit_err_msg});
-                c.sqlite3_free(commit_err_msg);
-            }
+            sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction: {s}") catch {};
         }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
@@ -703,7 +654,10 @@ const ArgIteratorWrapper = struct {
 
 const MAX_STDIN_SIZE = 1024 * 1024;
 
-const DelimiterIteratorError = error{SizeTooLarge};
+const DelimiterIteratorError = error{
+    SizeTooLarge,
+    UnexpectedZeroRead,
+};
 
 const DelimiterIteratorOptions = struct {
     delimiter: u8,
@@ -788,6 +742,7 @@ const DelimiterIterator = struct {
                     .limited(MAX_STDIN_SIZE),
                 );
 
+                // Consume the delimiter if it exists
                 _ = self.reader.takeByte() catch |err| {
                     switch (err) {
                         error.EndOfStream => {
@@ -799,7 +754,10 @@ const DelimiterIterator = struct {
                     }
                 };
 
-                if (read_bytes == 0) {} else {
+                if (read_bytes == 0) {
+                    // Zero bytes entries are indicative of an issue
+                    return DelimiterIteratorError.UnexpectedZeroRead;
+                } else {
                     return self.input_writer.written();
                 }
             }
@@ -1178,7 +1136,7 @@ pub fn processArgs(
             }
 
             try state_manager.open(filepath, true);
-            try KeysHandler.process(state_manager);
+            try KeysHandler.run(state_manager);
         },
         .KeyValues => {
             if (options.is_single_entry) {
@@ -1192,7 +1150,7 @@ pub fn processArgs(
             }
 
             try state_manager.open(filepath, true);
-            try KeyValuesHandler.process(state_manager);
+            try KeyValuesHandler.run(state_manager);
         },
         .KeysLike => {
             const raw_pattern = try args.next() orelse {
@@ -1208,7 +1166,7 @@ pub fn processArgs(
             }
 
             try state_manager.open(filepath, true);
-            try KeysLikeHandler.process(state_manager, pattern);
+            try KeysLikeHandler.run(state_manager, pattern);
         },
         .Delete => {
             var handler: DeleteHandler = .{};
