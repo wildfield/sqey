@@ -983,6 +983,12 @@ const ProcessArgsError = error{
     GeneralError,
 };
 
+
+fn singleEntryFail() !void {
+    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+    return ProcessArgsError.GeneralError; 
+}
+
 pub fn processArgs(
     comptime is_stdin: bool,
     allocator: std.mem.Allocator,
@@ -1018,8 +1024,7 @@ pub fn processArgs(
                     did_receive_valid_arg = true;
                     try database_manager.open(filepath, false);
                 } else if (options.is_single_entry) {
-                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    return ProcessArgsError.GeneralError;
+                    try singleEntryFail();
                 }
 
                 try handler.process(database_manager, key);
@@ -1046,8 +1051,7 @@ pub fn processArgs(
                     did_receive_valid_arg = true;
                     try database_manager.open(filepath, true);
                 } else if (options.is_single_entry) {
-                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    return ProcessArgsError.GeneralError;
+                    try singleEntryFail();
                 }
 
                 try handler.process(database_manager, .{ .key = key, .value = value });
@@ -1074,8 +1078,7 @@ pub fn processArgs(
                     did_receive_valid_arg = true;
                     try database_manager.open(filepath, true);
                 } else if (options.is_single_entry) {
-                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    return ProcessArgsError.GeneralError;
+                    try singleEntryFail();
                 }
 
                 errdefer handler.rollback(database_manager);
@@ -1104,8 +1107,7 @@ pub fn processArgs(
                     did_receive_valid_arg = true;
                     try database_manager.open(filepath, true);
                 } else if (options.is_single_entry) {
-                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    return ProcessArgsError.GeneralError;
+                    try singleEntryFail();
                 }
 
                 errdefer handler.rollback(database_manager);
@@ -1171,8 +1173,7 @@ pub fn processArgs(
                     did_receive_valid_arg = true;
                     try database_manager.open(filepath, false);
                 } else if (options.is_single_entry) {
-                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    return ProcessArgsError.GeneralError;
+                    try singleEntryFail();
                 }
 
                 errdefer handler.rollback(database_manager);
@@ -1194,8 +1195,7 @@ pub fn processArgs(
                     did_receive_valid_arg = true;
                     try database_manager.open(filepath, true);
                 } else if (options.is_single_entry) {
-                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    return ProcessArgsError.GeneralError;
+                    try singleEntryFail();
                 }
 
                 errdefer handler.rollback(database_manager);
