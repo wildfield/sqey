@@ -265,7 +265,6 @@ pub const GetOrElseSetHandler = struct {
 
             try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
             self.is_transaction_active = true;
-            errdefer self.rollback(sm);
         }
 
         defer {
@@ -379,7 +378,6 @@ pub const SetHandler = struct {
 
             try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
             self.is_transaction_active = true;
-            errdefer self.rollback(sm);
         }
 
         defer {
@@ -552,7 +550,6 @@ pub const DeleteHandler = struct {
 
             try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
             self.is_transaction_active = true;
-            errdefer self.rollback(sm);
         }
 
         defer {
@@ -633,7 +630,6 @@ pub const DeleteIfExistsHandler = struct {
 
             try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
             self.is_transaction_active = true;
-            errdefer self.rollback(sm);
         }
 
         defer {
