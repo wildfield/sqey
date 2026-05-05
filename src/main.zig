@@ -232,6 +232,21 @@ const DatabaseStateManager = struct {
     }
 };
 
+// Executes simple statements that do not return values or take parameters
+// `format` must take a single `{s}` as a format argument
+fn sqlite3SimpleExec(
+    db: ?*c.sqlite3,
+    sql: [*c]const u8,
+    comptime format: []const u8,
+) !void {
+    var rollback_err_msg: [*c]u8 = undefined;
+    const rollback_code = c.sqlite3_exec(db, sql, null, null, &rollback_err_msg);
+    if (rollback_code != 0) {
+        std.log.err(format, .{rollback_err_msg});
+        c.sqlite3_free(rollback_err_msg);
+    }
+}
+
 // =============================================================================
 // Handlers — one per message type, each owns its statement lifecycle
 // =============================================================================
@@ -240,7 +255,7 @@ const DatabaseStateManager = struct {
 const GetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
 
-    fn process(self: *GetHandler, sm: *DatabaseStateManager, key: []const u8) !void {
+    fn processStep(self: *GetHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
         }
@@ -270,13 +285,45 @@ const GetHandler = struct {
             _ = c.sqlite3_finalize(stmt);
         }
     }
+
+    // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally
+    fn run(
+        self: *GetHandler,
+        comptime is_stdin: bool,
+        allocator: std.mem.Allocator,
+        args: anytype,
+        filepath: [:0]const u8,
+        sm: *DatabaseStateManager,
+        options: Options,
+    ) !void {
+        var key_buffer = std.io.Writer.Allocating.init(allocator);
+        defer key_buffer.deinit();
+
+        var did_receive_valid_arg = false;
+        while (try args.next()) |raw_key| {
+            const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+
+            if (!did_receive_valid_arg) {
+                did_receive_valid_arg = true;
+                try sm.open(filepath, false);
+            } else if (options.is_single_entry) {
+                return singleEntryFail();
+            }
+
+            try self.processStep(sm, key);
+        }
+        if (!did_receive_valid_arg) {
+            std.log.err("Missing at least one key for get command", .{});
+            return ProcessArgsError.GeneralError;
+        }
+    }
 };
 
 // --- GetOrElseHandler ---
 const GetOrElseHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
 
-    fn process(self: *GetOrElseHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
+    fn processStep(self: *GetOrElseHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
         }
@@ -305,25 +352,55 @@ const GetOrElseHandler = struct {
             _ = c.sqlite3_finalize(stmt);
         }
     }
+
+    // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally
+    fn run(
+        self: *GetOrElseHandler,
+        comptime is_stdin: bool,
+        allocator: std.mem.Allocator,
+        args: anytype,
+        filepath: [:0]const u8,
+        sm: *DatabaseStateManager,
+        options: Options,
+    ) !void {
+        var key_buffer = std.io.Writer.Allocating.init(allocator);
+        defer key_buffer.deinit();
+
+        var did_receive_valid_arg = false;
+        while (try args.next()) |raw_key| {
+            const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+
+            const value = try args.next() orelse {
+                std.log.err("Missing default value for key \"{s}\"", .{key});
+                return ProcessArgsError.GeneralError;
+            };
+
+            if (!did_receive_valid_arg) {
+                did_receive_valid_arg = true;
+                try sm.open(filepath, true);
+            } else if (options.is_single_entry) {
+                return singleEntryFail();
+            }
+
+            try self.processStep(sm, .{ .key = key, .value = value });
+        }
+        if (!did_receive_valid_arg) {
+            std.log.err("Missing at least one key value pair for get-or-else command", .{});
+            return ProcessArgsError.GeneralError;
+        }
+    }
 };
 
 // --- GetOrElseSetHandler ---
 const GetOrElseSetHandler = struct {
-    statement: ?*c.sqlite3_stmt = null,
-    extra_statement: ?*c.sqlite3_stmt = null,
+    get_statement: ?*c.sqlite3_stmt = null,
+    insert_statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
 
-    fn rollback(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
-        }
-    }
-
-    fn process(self: *GetOrElseSetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
-        if (self.statement == null) {
-            self.statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
-            self.extra_statement = try prepareStatement(
+    fn processStep(self: *GetOrElseSetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
+        if (self.get_statement == null) {
+            self.get_statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
+            self.insert_statement = try prepareStatement(
                 sm.db,
                 "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
             );
@@ -334,13 +411,13 @@ const GetOrElseSetHandler = struct {
         }
 
         defer {
-            if (self.statement) |stmt| {
+            if (self.get_statement) |stmt| {
                 const reset_code = c.sqlite3_reset(stmt);
                 if (reset_code != c.SQLITE_OK) {
                     std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(sm.db)});
                 }
             }
-            if (self.extra_statement) |stmt| {
+            if (self.insert_statement) |stmt| {
                 const reset_code = c.sqlite3_reset(stmt);
                 if (reset_code != c.SQLITE_OK) {
                     std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(sm.db)});
@@ -348,17 +425,17 @@ const GetOrElseSetHandler = struct {
             }
         }
 
-        try bindText(sm.db, self.statement.?, 1, pair.key);
+        try bindText(sm.db, self.get_statement.?, 1, pair.key);
 
-        const result_code = c.sqlite3_step(self.statement.?);
+        const result_code = c.sqlite3_step(self.get_statement.?);
         if (result_code == c.SQLITE_ROW) {
-            try sm.printToken(try getColumnBlob(self.statement.?, 0));
+            try sm.printToken(try getColumnBlob(self.get_statement.?, 0));
         } else if (result_code == c.SQLITE_DONE) {
             try sm.printToken(pair.value);
 
-            try bindText(sm.db, self.extra_statement.?, 1, pair.key);
-            try bindBlob(sm.db, self.extra_statement.?, 2, pair.value);
-            const extra_result_code = c.sqlite3_step(self.extra_statement.?);
+            try bindText(sm.db, self.insert_statement.?, 1, pair.key);
+            try bindBlob(sm.db, self.insert_statement.?, 2, pair.value);
+            const extra_result_code = c.sqlite3_step(self.insert_statement.?);
 
             if (extra_result_code != c.SQLITE_DONE) {
                 std.log.err("Failed to insert row: {s}", .{c.sqlite3_errmsg(sm.db)});
@@ -370,16 +447,62 @@ const GetOrElseSetHandler = struct {
         }
     }
 
+    fn rollback(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
+        }
+    }
+
     fn close(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
             sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction: {s}") catch {};
         }
-        if (self.statement) |stmt| {
+        if (self.get_statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
-        if (self.extra_statement) |stmt| {
+        if (self.insert_statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
+        }
+    }
+
+    // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally
+    fn run(
+        self: *GetOrElseSetHandler,
+        comptime is_stdin: bool,
+        allocator: std.mem.Allocator,
+        args: anytype,
+        filepath: [:0]const u8,
+        sm: *DatabaseStateManager,
+        options: Options,
+    ) !void {
+        var key_buffer = std.io.Writer.Allocating.init(allocator);
+        defer key_buffer.deinit();
+
+        var did_receive_valid_arg = false;
+        while (try args.next()) |raw_key| {
+            const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+
+            const value = try args.next() orelse {
+                std.log.err("Missing default value for key \"{s}\"", .{key});
+                return ProcessArgsError.GeneralError;
+            };
+
+            if (!did_receive_valid_arg) {
+                did_receive_valid_arg = true;
+                try sm.open(filepath, true);
+            } else if (options.is_single_entry) {
+                return singleEntryFail();
+            }
+
+            errdefer self.rollback(sm);
+            try self.processStep(sm, .{ .key = key, .value = value });
+        }
+
+        if (!did_receive_valid_arg) {
+            std.log.err("Missing at least one key value pair for get-or-else-set command", .{});
+            return ProcessArgsError.GeneralError;
         }
     }
 };
@@ -389,14 +512,7 @@ const SetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
 
-    fn rollback(self: *SetHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
-        }
-    }
-
-    fn process(self: *SetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
+    fn processStep(self: *SetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(
                 sm.db,
@@ -425,6 +541,13 @@ const SetHandler = struct {
         }
     }
 
+    fn rollback(self: *SetHandler, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
+        }
+    }
+
     fn close(self: *SetHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
@@ -434,10 +557,50 @@ const SetHandler = struct {
             _ = c.sqlite3_finalize(stmt);
         }
     }
+
+    // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally
+    fn run(
+        self: *SetHandler,
+        comptime is_stdin: bool,
+        allocator: std.mem.Allocator,
+        args: anytype,
+        filepath: [:0]const u8,
+        sm: *DatabaseStateManager,
+        options: Options,
+    ) !void {
+        var key_buffer = std.io.Writer.Allocating.init(allocator);
+        defer key_buffer.deinit();
+
+        var did_receive_valid_arg = false;
+        while (try args.next()) |raw_key| {
+            const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+
+            const value = try args.next() orelse {
+                std.log.err("Missing value for key \"{s}\"", .{key});
+                return ProcessArgsError.GeneralError;
+            };
+
+            if (!did_receive_valid_arg) {
+                did_receive_valid_arg = true;
+                try sm.open(filepath, true);
+            } else if (options.is_single_entry) {
+                return singleEntryFail();
+            }
+
+            errdefer self.rollback(sm);
+            try self.processStep(sm, .{ .key = key, .value = value });
+        }
+
+        if (!did_receive_valid_arg) {
+            std.log.err("Missing at least one key value pair for set command", .{});
+            return ProcessArgsError.GeneralError;
+        }
+    }
 };
 
 // --- KeysHandler ---
 const KeysHandler = struct {
+    // Runs the full workflow. Keys workflows are performed in a single step
     fn run(sm: *DatabaseStateManager) !void {
         const order = if (!sm.is_reverse_order_output) "ASC" else "DESC";
 
@@ -446,7 +609,7 @@ const KeysHandler = struct {
         const statement_str = try std.fmt.bufPrint(&statement_str_buf, statement_str_pattern, .{order});
 
         const statement: *c.sqlite3_stmt = try prepareStatement(sm.db, statement_str);
-        errdefer _ = c.sqlite3_finalize(statement);
+        defer _ = c.sqlite3_finalize(statement);
 
         var result_code = c.sqlite3_step(statement);
         while (result_code == c.SQLITE_ROW) {
@@ -458,13 +621,12 @@ const KeysHandler = struct {
             std.log.err("Failed to list keys: {s}", .{c.sqlite3_errmsg(sm.db)});
             return DbError.FailedToExecuteQuery;
         }
-
-        _ = c.sqlite3_finalize(statement);
     }
 };
 
 // --- KeyValuesHandler ---
 const KeyValuesHandler = struct {
+    // Runs the full workflow. Keys workflows are performed in a single step
     fn run(sm: *DatabaseStateManager) !void {
         const is_reverse = sm.is_reverse_order_output;
         const order: []const u8 = if (!is_reverse) "ASC" else "DESC";
@@ -474,7 +636,7 @@ const KeyValuesHandler = struct {
         const statement_str = try std.fmt.bufPrint(&statement_str_buf, statement_str_pattern, .{order});
 
         const statement: *c.sqlite3_stmt = try prepareStatement(sm.db, statement_str);
-        errdefer _ = c.sqlite3_finalize(statement);
+        defer _ = c.sqlite3_finalize(statement);
 
         var result_code = c.sqlite3_step(statement);
         while (result_code == c.SQLITE_ROW) {
@@ -489,13 +651,12 @@ const KeyValuesHandler = struct {
             std.log.err("Failed to list keys: {s}", .{c.sqlite3_errmsg(sm.db)});
             return DbError.FailedToExecuteQuery;
         }
-
-        _ = c.sqlite3_finalize(statement);
     }
 };
 
 // --- KeysLikeHandler ---
 const KeysLikeHandler = struct {
+    // Runs the full workflow. Keys workflows are performed in a single step
     fn run(sm: *DatabaseStateManager, pattern: []const u8) !void {
         const is_reverse = sm.is_reverse_order_output;
         const order: []const u8 = if (!is_reverse) "ASC" else "DESC";
@@ -505,7 +666,7 @@ const KeysLikeHandler = struct {
         const statement_str = try std.fmt.bufPrint(&statement_str_buf, statement_str_pattern, .{order});
 
         const statement: *c.sqlite3_stmt = try prepareStatement(sm.db, statement_str);
-        errdefer _ = c.sqlite3_finalize(statement);
+        defer _ = c.sqlite3_finalize(statement);
 
         try bindText(sm.db, statement, 1, pattern);
 
@@ -519,39 +680,15 @@ const KeysLikeHandler = struct {
             std.log.err("Failed to list keys: {s}", .{c.sqlite3_errmsg(sm.db)});
             return DbError.FailedToExecuteQuery;
         }
-
-        _ = c.sqlite3_finalize(statement);
     }
 };
-
-// Executes simple statements that do not return values or take parameters
-// `format` must take a single `{s}` as a format argument
-fn sqlite3SimpleExec(
-    db: ?*c.sqlite3,
-    sql: [*c]const u8,
-    comptime format: []const u8,
-) !void {
-    var rollback_err_msg: [*c]u8 = undefined;
-    const rollback_code = c.sqlite3_exec(db, sql, null, null, &rollback_err_msg);
-    if (rollback_code != 0) {
-        std.log.err(format, .{rollback_err_msg});
-        c.sqlite3_free(rollback_err_msg);
-    }
-}
 
 // --- DeleteHandler ---
 const DeleteHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
 
-    fn rollback(self: *DeleteHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
-        }
-    }
-
-    fn process(self: *DeleteHandler, sm: *DatabaseStateManager, key: []const u8) !void {
+    fn processStep(self: *DeleteHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
 
@@ -582,6 +719,13 @@ const DeleteHandler = struct {
         }
     }
 
+    fn rollback(self: *DeleteHandler, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
+        }
+    }
+
     fn close(self: *DeleteHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
@@ -591,6 +735,33 @@ const DeleteHandler = struct {
             _ = c.sqlite3_finalize(stmt);
         }
     }
+
+    // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally
+    fn run(
+        self: *DeleteHandler,
+        args: anytype,
+        filepath: [:0]const u8,
+        sm: *DatabaseStateManager,
+        options: Options,
+    ) !void {
+        var did_receive_valid_arg = false;
+        while (try args.next()) |key| {
+            if (!did_receive_valid_arg) {
+                did_receive_valid_arg = true;
+                try sm.open(filepath, false);
+            } else if (options.is_single_entry) {
+                return singleEntryFail();
+            }
+
+            errdefer self.rollback(sm);
+            try self.processStep(sm, key);
+        }
+
+        if (!did_receive_valid_arg) {
+            std.log.err("Missing at least one key for delete command", .{});
+            return ProcessArgsError.GeneralError;
+        }
+    }
 };
 
 // --- DeleteIfExistsHandler ---
@@ -598,14 +769,7 @@ const DeleteIfExistsHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
 
-    fn rollback(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
-        }
-    }
-
-    fn process(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager, key: []const u8) !void {
+    fn processStep(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
 
@@ -618,7 +782,6 @@ const DeleteIfExistsHandler = struct {
             const reset_code = c.sqlite3_reset(self.statement.?);
             if (reset_code != c.SQLITE_OK) {
                 std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(sm.db)});
-                // cannot return error from defer
             }
         }
 
@@ -631,6 +794,14 @@ const DeleteIfExistsHandler = struct {
         }
     }
 
+    fn rollback(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
+        }
+    }
+
+
     fn close(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
@@ -638,6 +809,32 @@ const DeleteIfExistsHandler = struct {
         }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
+        }
+    }
+
+    // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally
+    fn run(
+        self: *DeleteIfExistsHandler,
+        args: anytype,
+        filepath: [:0]const u8,
+        sm: *DatabaseStateManager,
+        options: Options,
+    ) !void {
+        var did_receive_valid_arg = false;
+        while (try args.next()) |key| {
+            if (!did_receive_valid_arg) {
+                did_receive_valid_arg = true;
+                try sm.open(filepath, true);
+            } else if (options.is_single_entry) {
+                return singleEntryFail();
+            }
+
+            errdefer self.rollback(sm);
+            try self.processStep(sm, key);
+        }
+        if (!did_receive_valid_arg) {
+            std.log.err("Missing at least one key for \"delete-if-exists\" command", .{});
+            return ProcessArgsError.GeneralError;
         }
     }
 };
@@ -1008,116 +1205,26 @@ pub fn processArgs(
         }
     } else try parseCommand(command_str, is_stdin);
 
-    var key_buffer = std.io.Writer.Allocating.init(allocator);
-    defer {
-        key_buffer.deinit();
-    }
-
     switch (command) {
         .Get => {
             var handler: GetHandler = .{};
             defer handler.close();
-
-            var did_receive_valid_arg = false;
-            while (try args.next()) |key| {
-                if (!did_receive_valid_arg) {
-                    did_receive_valid_arg = true;
-                    try database_manager.open(filepath, false);
-                } else if (options.is_single_entry) {
-                    try singleEntryFail();
-                }
-
-                try handler.process(database_manager, key);
-            }
-            if (!did_receive_valid_arg) {
-                std.log.err("Missing at least one key for get command", .{});
-                return ProcessArgsError.GeneralError;
-            }
+            try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
         },
         .GetOrElse => {
             var handler: GetOrElseHandler = .{};
             defer handler.close();
-
-            var did_receive_valid_arg = false;
-            while (try args.next()) |raw_key| {
-                const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
-
-                const value = try args.next() orelse {
-                    std.log.err("Missing default value for key \"{s}\"", .{key});
-                    return ProcessArgsError.GeneralError;
-                };
-
-                if (!did_receive_valid_arg) {
-                    did_receive_valid_arg = true;
-                    try database_manager.open(filepath, true);
-                } else if (options.is_single_entry) {
-                    try singleEntryFail();
-                }
-
-                try handler.process(database_manager, .{ .key = key, .value = value });
-            }
-            if (!did_receive_valid_arg) {
-                std.log.err("Missing at least one key value pair for get-or-else command", .{});
-                return ProcessArgsError.GeneralError;
-            }
+            try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
         },
         .GetOrElseSet => {
             var handler: GetOrElseSetHandler = .{};
             defer handler.close(database_manager);
-
-            var did_receive_valid_arg = false;
-            while (try args.next()) |raw_key| {
-                const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
-
-                const value = try args.next() orelse {
-                    std.log.err("Missing default value for key \"{s}\"", .{key});
-                    return ProcessArgsError.GeneralError;
-                };
-
-                if (!did_receive_valid_arg) {
-                    did_receive_valid_arg = true;
-                    try database_manager.open(filepath, true);
-                } else if (options.is_single_entry) {
-                    try singleEntryFail();
-                }
-
-                errdefer handler.rollback(database_manager);
-                try handler.process(database_manager, .{ .key = key, .value = value });
-            }
-
-            if (!did_receive_valid_arg) {
-                std.log.err("Missing at least one key value pair for get-or-else-set command", .{});
-                return ProcessArgsError.GeneralError;
-            }
+            try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
         },
         .Set => {
             var handler: SetHandler = .{};
             defer handler.close(database_manager);
-
-            var did_receive_valid_arg = false;
-            while (try args.next()) |raw_key| {
-                const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
-
-                const value = try args.next() orelse {
-                    std.log.err("Missing value for key \"{s}\"", .{key});
-                    return ProcessArgsError.GeneralError;
-                };
-
-                if (!did_receive_valid_arg) {
-                    did_receive_valid_arg = true;
-                    try database_manager.open(filepath, true);
-                } else if (options.is_single_entry) {
-                    try singleEntryFail();
-                }
-
-                errdefer handler.rollback(database_manager);
-                try handler.process(database_manager, .{ .key = key, .value = value });
-            }
-
-            if (!did_receive_valid_arg) {
-                std.log.err("Missing at least one key value pair for set command", .{});
-                return ProcessArgsError.GeneralError;
-            }
+            try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
         },
         .Keys => {
             if (options.is_single_entry) {
@@ -1148,6 +1255,9 @@ pub fn processArgs(
             try KeyValuesHandler.run(database_manager);
         },
         .KeysLike => {
+            var key_buffer = std.io.Writer.Allocating.init(allocator);
+            defer key_buffer.deinit();
+
             const raw_pattern = try args.next() orelse {
                 std.log.err("Missing pattern for \"keys-like\"", .{});
                 return ProcessArgsError.GeneralError;
@@ -1166,45 +1276,12 @@ pub fn processArgs(
         .Delete => {
             var handler: DeleteHandler = .{};
             defer handler.close(database_manager);
-
-            var did_receive_valid_arg = false;
-            while (try args.next()) |key| {
-                if (!did_receive_valid_arg) {
-                    did_receive_valid_arg = true;
-                    try database_manager.open(filepath, false);
-                } else if (options.is_single_entry) {
-                    try singleEntryFail();
-                }
-
-                errdefer handler.rollback(database_manager);
-                try handler.process(database_manager, key);
-            }
-
-            if (!did_receive_valid_arg) {
-                std.log.err("Missing at least one key for delete command", .{});
-                return ProcessArgsError.GeneralError;
-            }
+            try handler.run(args, filepath, database_manager, options);
         },
         .DeleteIfExists => {
             var handler: DeleteIfExistsHandler = .{};
             defer handler.close(database_manager);
-
-            var did_receive_valid_arg = false;
-            while (try args.next()) |key| {
-                if (!did_receive_valid_arg) {
-                    did_receive_valid_arg = true;
-                    try database_manager.open(filepath, true);
-                } else if (options.is_single_entry) {
-                    try singleEntryFail();
-                }
-
-                errdefer handler.rollback(database_manager);
-                try handler.process(database_manager, key);
-            }
-            if (!did_receive_valid_arg) {
-                std.log.err("Missing at least one key for \"delete-if-exists\" command", .{});
-                return ProcessArgsError.GeneralError;
-            }
+            try handler.run(args, filepath, database_manager, options);
         },
         .Stdin => {
             if (!is_stdin) {
