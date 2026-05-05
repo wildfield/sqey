@@ -867,7 +867,7 @@ fn parseOptionsOrArg(
     return .{ .OptionsAndArg = .{ .options = options, .arg = arg } };
 }
 
-pub fn main() !u8 {
+pub fn main() !void {
     var args = std.process.args();
     _ = args.skip();
 
@@ -876,7 +876,7 @@ pub fn main() !u8 {
     switch (filepath_result) {
         .Help => {
             std.log.info(help, .{});
-            return 0;
+            return;
         },
         .OptionsAndArg => |result| {
             const filepath = result.arg;
@@ -886,7 +886,7 @@ pub fn main() !u8 {
             switch (command_str_result) {
                 .Help => {
                     std.log.info(help, .{});
-                    return 0;
+                    return;
                 },
                 .OptionsAndArg => |command_result| {
                     const command_str = command_result.arg;
@@ -909,7 +909,7 @@ pub fn main() !u8 {
                         .iterator = &args,
                     };
 
-                    return try processArgs(
+                    try processArgs(
                         false,
                         std.heap.smp_allocator,
                         wrapper,
@@ -979,22 +979,26 @@ fn tempBuffered(
     }
 }
 
+const ProcessArgsError = error{
+    GeneralError,
+};
+
 pub fn processArgs(
     comptime is_stdin: bool,
     allocator: std.mem.Allocator,
     args: anytype,
     command_str: [:0]const u8,
     filepath: [:0]const u8,
-    state_manager: *DatabaseStateManager,
+    database_manager: *DatabaseStateManager,
     options: Options,
-) !u8 {
+) !void {
     const command = if (is_stdin) command: {
         if (try args.next()) |arg| {
             const command = try parseCommand(arg, is_stdin);
             break :command command;
         } else {
             std.log.err("Missing a command in the std input", .{});
-            return 1;
+            return ProcessArgsError.GeneralError;
         }
     } else try parseCommand(command_str, is_stdin);
 
@@ -1006,222 +1010,200 @@ pub fn processArgs(
     switch (command) {
         .Get => {
             var handler: GetHandler = .{};
+            defer handler.close();
+
             var did_receive_valid_arg = false;
             while (try args.next()) |key| {
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
-                    try state_manager.open(filepath, false);
+                    try database_manager.open(filepath, false);
                 } else if (options.is_single_entry) {
                     std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    handler.close();
-                    return 1;
+                    return ProcessArgsError.GeneralError;
                 }
 
-                try handler.process(state_manager, key);
+                try handler.process(database_manager, key);
             }
-            handler.close();
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for get command", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
         },
         .GetOrElse => {
             var handler: GetOrElseHandler = .{};
+            defer handler.close();
+
             var did_receive_valid_arg = false;
             while (try args.next()) |raw_key| {
                 const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
 
                 const value = try args.next() orelse {
                     std.log.err("Missing default value for key \"{s}\"", .{key});
-                    handler.close();
-                    return 1;
+                    return ProcessArgsError.GeneralError;
                 };
 
                 if (!did_receive_valid_arg) {
                     did_receive_valid_arg = true;
-                    try state_manager.open(filepath, true);
+                    try database_manager.open(filepath, true);
                 } else if (options.is_single_entry) {
                     std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                    handler.close();
-                    return 1;
+                    return ProcessArgsError.GeneralError;
                 }
 
-                try handler.process(state_manager, .{ .key = key, .value = value });
+                try handler.process(database_manager, .{ .key = key, .value = value });
             }
-            handler.close();
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else command", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
         },
         .GetOrElseSet => {
             var handler: GetOrElseSetHandler = .{};
+            defer handler.close(database_manager);
+
             var did_receive_valid_arg = false;
-            const sqey_result: u8 = (blk: {
-                while (try args.next()) |raw_key| {
-                    const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+            while (try args.next()) |raw_key| {
+                const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
 
-                    const value = try args.next() orelse {
-                        std.log.err("Missing default value for key \"{s}\"", .{key});
-                        break :blk 1;
-                    };
+                const value = try args.next() orelse {
+                    std.log.err("Missing default value for key \"{s}\"", .{key});
+                    return ProcessArgsError.GeneralError;
+                };
 
-                    if (!did_receive_valid_arg) {
-                        did_receive_valid_arg = true;
-                        try state_manager.open(filepath, true);
-                    } else if (options.is_single_entry) {
-                        std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                        break :blk 1;
-                    }
-
-                    errdefer {
-                        handler.rollback(state_manager);
-                        handler.close(state_manager);
-                    }
-                    try handler.process(state_manager, .{ .key = key, .value = value });
+                if (!did_receive_valid_arg) {
+                    did_receive_valid_arg = true;
+                    try database_manager.open(filepath, true);
+                } else if (options.is_single_entry) {
+                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                    return ProcessArgsError.GeneralError;
                 }
-                break :blk 0;
-            });
-            handler.close(state_manager);
-            if (sqey_result != 0) return sqey_result;
+
+                errdefer handler.rollback(database_manager);
+                try handler.process(database_manager, .{ .key = key, .value = value });
+            }
+
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for get-or-else-set command", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
         },
         .Set => {
             var handler: SetHandler = .{};
+            defer handler.close(database_manager);
+
             var did_receive_valid_arg = false;
-            const sqey_result: u8 = (blk: {
-                while (try args.next()) |raw_key| {
-                    const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+            while (try args.next()) |raw_key| {
+                const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
 
-                    const value = try args.next() orelse {
-                        std.log.err("Missing value for key \"{s}\"", .{key});
-                        break :blk 1;
-                    };
+                const value = try args.next() orelse {
+                    std.log.err("Missing value for key \"{s}\"", .{key});
+                    return ProcessArgsError.GeneralError;
+                };
 
-                    if (!did_receive_valid_arg) {
-                        did_receive_valid_arg = true;
-                        try state_manager.open(filepath, true);
-                    } else if (options.is_single_entry) {
-                        std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                        break :blk 1;
-                    }
-
-                    errdefer {
-                        handler.rollback(state_manager);
-                        handler.close(state_manager);
-                    }
-                    try handler.process(state_manager, .{ .key = key, .value = value });
+                if (!did_receive_valid_arg) {
+                    did_receive_valid_arg = true;
+                    try database_manager.open(filepath, true);
+                } else if (options.is_single_entry) {
+                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                    return ProcessArgsError.GeneralError;
                 }
-                break :blk 0;
-            });
-            handler.close(state_manager);
-            if (sqey_result != 0) return sqey_result;
+
+                errdefer handler.rollback(database_manager);
+                try handler.process(database_manager, .{ .key = key, .value = value });
+            }
+
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key value pair for set command", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
         },
         .Keys => {
             if (options.is_single_entry) {
                 std.log.err("Key operations are not allowed with single entry flag", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
 
             if (try args.next()) |_| {
                 std.log.err("Keys command doesn't accept extra arguments", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
 
-            try state_manager.open(filepath, true);
-            try KeysHandler.run(state_manager);
+            try database_manager.open(filepath, true);
+            try KeysHandler.run(database_manager);
         },
         .KeyValues => {
             if (options.is_single_entry) {
                 std.log.err("Key operations are not allowed with single entry flag", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
 
             if (try args.next()) |_| {
                 std.log.err("\"key-values\" command doesn't accept extra arguments", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
 
-            try state_manager.open(filepath, true);
-            try KeyValuesHandler.run(state_manager);
+            try database_manager.open(filepath, true);
+            try KeyValuesHandler.run(database_manager);
         },
         .KeysLike => {
             const raw_pattern = try args.next() orelse {
                 std.log.err("Missing pattern for \"keys-like\"", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             };
 
             const pattern = try tempBuffered(is_stdin, &key_buffer, raw_pattern);
 
             if (try args.next()) |_| {
                 std.log.err("\"keys-like\" command doesn't accept any extra arguments after the pattern", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
 
-            try state_manager.open(filepath, true);
-            try KeysLikeHandler.run(state_manager, pattern);
+            try database_manager.open(filepath, true);
+            try KeysLikeHandler.run(database_manager, pattern);
         },
         .Delete => {
             var handler: DeleteHandler = .{};
-            var did_receive_valid_arg = false;
-            const sqey_result: u8 = (blk: {
-                while (try args.next()) |key| {
-                    if (!did_receive_valid_arg) {
-                        did_receive_valid_arg = true;
-                        try state_manager.open(filepath, false);
-                    } else if (options.is_single_entry) {
-                        std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                        break :blk 1;
-                    }
+            defer handler.close(database_manager);
 
-                    errdefer {
-                        handler.rollback(state_manager);
-                        handler.close(state_manager);
-                    }
-                    try handler.process(state_manager, key);
+            var did_receive_valid_arg = false;
+            while (try args.next()) |key| {
+                if (!did_receive_valid_arg) {
+                    did_receive_valid_arg = true;
+                    try database_manager.open(filepath, false);
+                } else if (options.is_single_entry) {
+                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                    return ProcessArgsError.GeneralError;
                 }
-                break :blk 0;
-            });
-            handler.close(state_manager);
-            if (sqey_result != 0) return sqey_result;
+
+                errdefer handler.rollback(database_manager);
+                try handler.process(database_manager, key);
+            }
+
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for delete command", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
         },
         .DeleteIfExists => {
             var handler: DeleteIfExistsHandler = .{};
-            var did_receive_valid_arg = false;
-            const sqey_result: u8 = (blk: {
-                while (try args.next()) |key| {
-                    if (!did_receive_valid_arg) {
-                        did_receive_valid_arg = true;
-                        try state_manager.open(filepath, true);
-                    } else if (options.is_single_entry) {
-                        std.log.err("Only single input/output key is allowed with single entry flag", .{});
-                        break :blk 1;
-                    }
+            defer handler.close(database_manager);
 
-                    errdefer {
-                        handler.rollback(state_manager);
-                        handler.close(state_manager);
-                    }
-                    try handler.process(state_manager, key);
+            var did_receive_valid_arg = false;
+            while (try args.next()) |key| {
+                if (!did_receive_valid_arg) {
+                    did_receive_valid_arg = true;
+                    try database_manager.open(filepath, true);
+                } else if (options.is_single_entry) {
+                    std.log.err("Only single input/output key is allowed with single entry flag", .{});
+                    return ProcessArgsError.GeneralError;
                 }
-                break :blk 0;
-            });
-            handler.close(state_manager);
-            if (sqey_result != 0) return sqey_result;
+
+                errdefer handler.rollback(database_manager);
+                try handler.process(database_manager, key);
+            }
             if (!did_receive_valid_arg) {
                 std.log.err("Missing at least one key for \"delete-if-exists\" command", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
         },
         .Stdin => {
@@ -1262,15 +1244,13 @@ pub fn processArgs(
                     &iterator,
                     command_str,
                     filepath,
-                    state_manager,
+                    database_manager,
                     options,
                 );
             } else {
                 std.log.err("Processing stdin from stdin", .{});
-                return 1;
+                return ProcessArgsError.GeneralError;
             }
         },
     }
-
-    return 0;
 }
