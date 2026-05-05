@@ -227,21 +227,27 @@ fn parseOptionsOrArg(
             const is_help = std.mem.eql(u8, options_arg, "--help") or std.mem.containsAtLeastScalar(u8, options_arg, 1, 'h');
             if (is_help) {
                 return .{ .Help = undefined };
-            } else if (std.mem.containsAtLeastScalar(u8, options_arg, 1, '0')) {
+            }
+
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, '0')) {
                 if (!options.is_binary_protocol and !options.is_single_entry) {
                     options.delimiter = 0;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return error.ConflictingOptions;
                 }
-            } else if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'b')) {
+            }
+
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'b')) {
                 if (options.delimiter != 0 and !options.is_single_entry) {
                     options.is_binary_protocol = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return error.ConflictingOptions;
                 }
-            } else if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 's')) {
+            }
+
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 's')) {
                 if (options.delimiter != 0 and !options.is_binary_protocol) {
                     options.is_single_entry = true;
                 } else {
