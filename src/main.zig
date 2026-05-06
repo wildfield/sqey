@@ -162,8 +162,11 @@ const DelimiterIterator = struct {
                 };
 
                 if (read_bytes == 0) {
-                    // Zero bytes entries are indicative of an issue
-                    return DelimiterIteratorError.UnexpectedZeroRead;
+                    if (self.is_done) {
+                        return null;
+                    } else {
+                        return DelimiterIteratorError.UnexpectedZeroRead;
+                    }
                 } else {
                     return self.input_writer.written();
                 }
