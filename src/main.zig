@@ -272,8 +272,9 @@ fn parseOptionsOrArg(
             }
 
             for (options_arg) |byte| {
-                const is_valid = byte != '0' or byte != 'b' or byte != 's' or byte != 'r';
+                const is_valid = byte == '0' or byte == 'b' or byte == 's' or byte == 'r';
                 if (!is_valid) {
+                    printHelp();
                     return OptionsParsingError.UnknownFlag;
                 }
             }
