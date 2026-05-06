@@ -197,6 +197,7 @@ const help =
 const OptionsParsingError = error{
     MissingArgument,
     ConflictingOptions,
+    UnknownFlag,
 };
 
 const OptionParsingResultEnum = enum { OptionsAndArg, Help };
@@ -223,7 +224,7 @@ fn parseOptionsOrArg(
 
     var arg = args.next() orelse {
         printHelp();
-        return error.MissingArgument;
+        return OptionsParsingError.MissingArgument;
     };
 
     var is_options = true;
@@ -234,7 +235,7 @@ fn parseOptionsOrArg(
         if (is_options) {
             const options_arg = arg;
 
-            const is_help = std.mem.eql(u8, options_arg, "--help") or std.mem.containsAtLeastScalar(u8, options_arg, 1, 'h');
+            const is_help = std.mem.eql(u8, options_arg, "--help") or std.mem.eql(u8, options_arg, "-h");
             if (is_help) {
                 return .{ .Help = undefined };
             }
@@ -244,7 +245,7 @@ fn parseOptionsOrArg(
                     options.delimiter = 0;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
-                    return error.ConflictingOptions;
+                    return OptionsParsingError.ConflictingOptions;
                 }
             }
 
@@ -253,7 +254,7 @@ fn parseOptionsOrArg(
                     options.is_binary_protocol = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
-                    return error.ConflictingOptions;
+                    return OptionsParsingError.ConflictingOptions;
                 }
             }
 
@@ -262,7 +263,7 @@ fn parseOptionsOrArg(
                     options.is_single_entry = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
-                    return error.ConflictingOptions;
+                    return OptionsParsingError.ConflictingOptions;
                 }
             }
 
@@ -270,9 +271,16 @@ fn parseOptionsOrArg(
                 options.is_reverse_order_output = true;
             }
 
+            for (options_arg) |byte| {
+                const is_valid = byte != '0' or byte != 'b' or byte != 's' or byte != 'r';
+                if (!is_valid) {
+                    return OptionsParsingError.UnknownFlag;
+                }
+            }
+
             arg = args.next() orelse {
                 printHelp();
-                return error.MissingArgument;
+                return OptionsParsingError.MissingArgument;
             };
         }
     }
