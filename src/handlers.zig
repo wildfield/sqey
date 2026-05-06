@@ -269,6 +269,13 @@ pub const GetOrElseSetHandler = struct {
     insert_statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
 
+    fn begin(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) !void {
+        if (!self.is_transaction_active) {
+            try beginTransaction(sm.db);
+            self.is_transaction_active = true;
+        }
+    }
+
     fn processStep(self: *GetOrElseSetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.get_statement == null) {
             self.get_statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
@@ -278,9 +285,6 @@ pub const GetOrElseSetHandler = struct {
                 sm.db,
                 "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
             );
-
-            try beginTransaction(sm.db);
-            self.is_transaction_active = true;
         }
 
         defer {
@@ -371,6 +375,7 @@ pub const GetOrElseSetHandler = struct {
                 return singleEntryFail();
             }
 
+            try self.begin(sm);
             try self.processStep(sm, .{ .key = key, .value = value });
         }
 
@@ -385,15 +390,19 @@ pub const SetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
 
+    fn begin(self: *SetHandler, sm: *DatabaseStateManager) !void {
+        if (!self.is_transaction_active) {
+            try beginTransaction(sm.db);
+            self.is_transaction_active = true;
+        }
+    }
+
     fn processStep(self: *SetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(
                 sm.db,
                 "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
             );
-
-            try beginTransaction(sm.db);
-            self.is_transaction_active = true;
         }
 
         defer {
@@ -462,6 +471,7 @@ pub const SetHandler = struct {
                 return singleEntryFail();
             }
 
+            try self.begin(sm);
             try self.processStep(sm, .{ .key = key, .value = value });
         }
 
@@ -558,12 +568,16 @@ pub const DeleteHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
 
+    fn begin(self: *DeleteHandler, sm: *DatabaseStateManager) !void {
+        if (!self.is_transaction_active) {
+            try beginTransaction(sm.db);
+            self.is_transaction_active = true;
+        }
+    }
+
     fn processStep(self: *DeleteHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
-
-            try beginTransaction(sm.db);
-            self.is_transaction_active = true;
         }
 
         defer {
@@ -624,6 +638,7 @@ pub const DeleteHandler = struct {
                 return singleEntryFail();
             }
 
+            try self.begin(sm);
             try self.processStep(sm, key);
         }
 
@@ -638,12 +653,16 @@ pub const DeleteIfExistsHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
 
+    fn begin(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) !void {
+        if (!self.is_transaction_active) {
+            try beginTransaction(sm.db);
+            self.is_transaction_active = true;
+        }
+    }
+
     fn processStep(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
-
-            try beginTransaction(sm.db);
-            self.is_transaction_active = true;
         }
 
         defer {
@@ -698,6 +717,7 @@ pub const DeleteIfExistsHandler = struct {
                 return singleEntryFail();
             }
 
+            try self.begin(sm);
             try self.processStep(sm, key);
         }
         if (!did_receive_valid_arg) {
