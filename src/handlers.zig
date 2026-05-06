@@ -7,19 +7,11 @@ const utils = @import("utils.zig");
 const DbError = database.DbError;
 pub const DatabaseStateManager = database.DatabaseStateManager;
 
-// =============================================================================
-// Shared types (re-exported from utils)
-// =============================================================================
-
 const KeyValuePair = utils.KeyValuePair;
 const Options = utils.Options;
 const ProcessArgsError = utils.ProcessArgsError;
 const singleEntryFail = utils.singleEntryFail;
 const tempBuffered = utils.tempBuffered;
-
-// =============================================================================
-// SQLite helpers
-// =============================================================================
 
 fn prepareStatement(
     db: *c.sqlite3,
@@ -113,10 +105,6 @@ fn sqlite3SimpleExec(
         return DbError.FailedToExecuteQuery;
     }
 }
-
-// =============================================================================
-// Handlers — one per message type, each owns its statement lifecycle
-// =============================================================================
 
 pub const GetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,

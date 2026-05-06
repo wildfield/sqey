@@ -50,10 +50,6 @@ pub fn printTokenWriter(
     }
 }
 
-// =============================================================================
-// DatabaseStateManager — manages DB open/close lifecycle only
-// =============================================================================
-
 pub const DatabaseStateManager = struct {
     current_state: DatabaseState = .Initial,
     stdout: *std.Io.Writer,
