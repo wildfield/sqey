@@ -93,15 +93,16 @@ fn getColumnBlob(statement: *c.sqlite3_stmt, column: c_int) ![]const u8 {
 // Executes simple statements that do not return values or take parameters.
 // `format` must take a single `{s}` as a format argument.
 fn sqlite3SimpleExec(
-    db: ?*c.sqlite3,
+    db: *c.sqlite3,
     sql: [*c]const u8,
     comptime format: []const u8,
 ) !void {
-    var rollback_err_msg: [*c]u8 = undefined;
-    const rollback_code = c.sqlite3_exec(db, sql, null, null, &rollback_err_msg);
+    var err_msg: [*c]u8 = undefined;
+    const rollback_code = c.sqlite3_exec(db, sql, null, null, &err_msg);
     if (rollback_code != 0) {
-        std.log.err(format, .{rollback_err_msg});
-        c.sqlite3_free(rollback_err_msg);
+        std.log.err(format, .{err_msg});
+        c.sqlite3_free(err_msg);
+        return DbError.FailedToExecuteQuery;
     }
 }
 
@@ -255,6 +256,8 @@ pub const GetOrElseSetHandler = struct {
     fn processStep(self: *GetOrElseSetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.get_statement == null) {
             self.get_statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
+            // We update the id on conflict to reorder the elements when using key-based operations
+            // The latest updated element will be on the bottom. This allows to use for history-like applications
             self.insert_statement = try prepareStatement(
                 sm.db,
                 "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",

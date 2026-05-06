@@ -125,7 +125,10 @@ const DelimiterIterator = struct {
                 } else if (number_bytes > 0) {
                     try self.reader.streamExact(&self.input_writer.writer, number_bytes);
                     return self.input_writer.written();
-                } else {}
+                } else {
+                    // Zero bytes entries are indicative of an issue
+                    return DelimiterIteratorError.UnexpectedZeroRead;
+                }
             }
         } else if (self.is_single_entry) {
             if (self.is_done) return null;

@@ -74,7 +74,7 @@ pub const DatabaseStateManager = struct {
                 flags |= c.SQLITE_OPEN_CREATE;
             }
             const failure = c.sqlite3_open_v2(filepath, @ptrCast(&db), flags, null);
-            errdefer c.sqlite3_close(db); 
+            errdefer _ = c.sqlite3_close(db); 
 
             if (failure != 0) {
                 std.log.err("Failed to open database: {s}", .{c.sqlite3_errmsg(db)});
