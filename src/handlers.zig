@@ -173,6 +173,7 @@ pub const GetHandler = struct {
         var key_buffer = std.io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
+        defer self.close();
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
             const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
@@ -239,6 +240,7 @@ pub const GetOrElseHandler = struct {
         var key_buffer = std.io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
+        defer self.close();
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
             const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
@@ -357,6 +359,7 @@ pub const GetOrElseSetHandler = struct {
         var key_buffer = std.io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
+        defer self.close(sm);
         errdefer self.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
@@ -453,6 +456,7 @@ pub const SetHandler = struct {
         var key_buffer = std.io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
+        defer self.close(sm);
         errdefer self.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
@@ -626,6 +630,7 @@ pub const DeleteHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
+        defer self.close(sm);
         errdefer self.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |key| {
@@ -704,6 +709,7 @@ pub const DeleteIfExistsHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
+        defer self.close(sm);
         errdefer self.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |key| {

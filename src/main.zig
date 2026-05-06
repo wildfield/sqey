@@ -407,22 +407,18 @@ pub fn processArgs(
     switch (command) {
         .Get => {
             var handler: GetHandler = .{};
-            defer handler.close();
             try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
         },
         .GetOrElse => {
             var handler: GetOrElseHandler = .{};
-            defer handler.close();
             try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
         },
         .GetOrElseSet => {
             var handler: GetOrElseSetHandler = .{};
-            defer handler.close(database_manager);
             try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
         },
         .Set => {
             var handler: SetHandler = .{};
-            defer handler.close(database_manager);
             try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
         },
         .Keys => {
@@ -474,12 +470,10 @@ pub fn processArgs(
         },
         .Delete => {
             var handler: DeleteHandler = .{};
-            defer handler.close(database_manager);
             try handler.run(args, filepath, database_manager, options);
         },
         .DeleteIfExists => {
             var handler: DeleteIfExistsHandler = .{};
-            defer handler.close(database_manager);
             try handler.run(args, filepath, database_manager, options);
         },
         .Stdin => {
