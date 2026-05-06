@@ -109,7 +109,6 @@ fn sqlite3SimpleExec(
 // Handlers — one per message type, each owns its statement lifecycle
 // =============================================================================
 
-// --- GetHandler ---
 pub const GetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
 
@@ -177,7 +176,6 @@ pub const GetHandler = struct {
     }
 };
 
-// --- GetOrElseHandler ---
 pub const GetOrElseHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
 
@@ -249,7 +247,6 @@ pub const GetOrElseHandler = struct {
     }
 };
 
-// --- GetOrElseSetHandler ---
 pub const GetOrElseSetHandler = struct {
     get_statement: ?*c.sqlite3_stmt = null,
     insert_statement: ?*c.sqlite3_stmt = null,
@@ -364,7 +361,6 @@ pub const GetOrElseSetHandler = struct {
     }
 };
 
-// --- SetHandler ---
 pub const SetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
@@ -454,7 +450,6 @@ pub const SetHandler = struct {
     }
 };
 
-// --- KeysHandler ---
 pub const KeysHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager) !void {
@@ -480,7 +475,6 @@ pub const KeysHandler = struct {
     }
 };
 
-// --- KeyValuesHandler ---
 pub const KeyValuesHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager) !void {
@@ -510,7 +504,6 @@ pub const KeyValuesHandler = struct {
     }
 };
 
-// --- KeysLikeHandler ---
 pub const KeysLikeHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager, pattern: []const u8) !void {
@@ -539,7 +532,6 @@ pub const KeysLikeHandler = struct {
     }
 };
 
-// --- DeleteHandler ---
 pub const DeleteHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
@@ -619,7 +611,6 @@ pub const DeleteHandler = struct {
     }
 };
 
-// --- DeleteIfExistsHandler ---
 pub const DeleteIfExistsHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     is_transaction_active: bool = false,
