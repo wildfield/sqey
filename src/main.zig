@@ -9,6 +9,7 @@ const DatabaseStateManager = database.DatabaseStateManager;
 const Options = utils.Options;
 const ProcessArgsError = utils.ProcessArgsError;
 const tempBuffered = utils.tempBuffered;
+const KeyValuePair = utils.KeyValuePair;
 
 const GetHandler = handlers.GetHandler;
 const GetOrElseHandler = handlers.GetOrElseHandler;
@@ -35,9 +36,9 @@ const MessageType = enum {
 
 const Message = union(MessageType) {
     Get: []const u8,
-    GetOrElse: utils.KeyValuePair,
-    GetOrElseSet: utils.KeyValuePair,
-    Set: utils.KeyValuePair,
+    GetOrElse: KeyValuePair,
+    GetOrElseSet: KeyValuePair,
+    Set: KeyValuePair,
     Keys: void,
     KeyValues: void,
     KeysLike: []const u8,
