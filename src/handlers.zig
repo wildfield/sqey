@@ -106,6 +106,26 @@ fn sqlite3SimpleExec(
     }
 }
 
+fn beginTransaction(
+    db: *c.sqlite3,
+) !void {
+    try sqlite3SimpleExec(db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
+}
+
+// Swallows errors, primarily used in defer blocks
+fn commitTransaction(
+    db: *c.sqlite3,
+) void {
+    sqlite3SimpleExec(db, "COMMIT TRANSACTION", "Failed to commit transaction {s}") catch {};
+}
+
+// Swallows errors, primarily used in defer blocks
+fn rollbackTransaction(
+    db: *c.sqlite3,
+) void {
+    sqlite3SimpleExec(db, "ROLLBACK TRANSACTION", "Failed to rollback transaction {s}") catch {};
+}
+
 pub const GetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
 
@@ -259,7 +279,7 @@ pub const GetOrElseSetHandler = struct {
                 "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
             );
 
-            try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
+            try beginTransaction(sm.db);
             self.is_transaction_active = true;
         }
 
@@ -303,14 +323,14 @@ pub const GetOrElseSetHandler = struct {
     pub fn rollback(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
+            rollbackTransaction(sm.db);
         }
     }
 
     pub fn close(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction: {s}") catch {};
+            commitTransaction(sm.db);
         }
         if (self.get_statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
@@ -372,7 +392,7 @@ pub const SetHandler = struct {
                 "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
             );
 
-            try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
+            try beginTransaction(sm.db);
             self.is_transaction_active = true;
         }
 
@@ -397,14 +417,14 @@ pub const SetHandler = struct {
 
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
+            rollbackTransaction(sm.db);
         }
     }
 
     pub fn close(self: *SetHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction: {s}") catch {};
+            commitTransaction(sm.db);
         }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
@@ -542,7 +562,7 @@ pub const DeleteHandler = struct {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
 
-            try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
+            try beginTransaction(sm.db);
             self.is_transaction_active = true;
         }
 
@@ -571,14 +591,14 @@ pub const DeleteHandler = struct {
     pub fn rollback(self: *DeleteHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
+            rollbackTransaction(sm.db);
         }
     }
 
     pub fn close(self: *DeleteHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction: {s}") catch {};
+            commitTransaction(sm.db);
         }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
@@ -622,7 +642,7 @@ pub const DeleteIfExistsHandler = struct {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
 
-            try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
+            try beginTransaction(sm.db);
             self.is_transaction_active = true;
         }
 
@@ -645,14 +665,14 @@ pub const DeleteIfExistsHandler = struct {
     pub fn rollback(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
+            rollbackTransaction(sm.db);
         }
     }
 
     pub fn close(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
-            sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction: {s}") catch {};
+            commitTransaction(sm.db);
         }
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
