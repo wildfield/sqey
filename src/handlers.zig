@@ -27,7 +27,7 @@ fn prepareStatement(
     );
     if (failure != c.SQLITE_OK) {
         std.log.err("Failed to compile statement: {s}", .{c.sqlite3_errmsg(db)});
-        return DbError.FailedToExecuteQuery;
+        return DbError.FailedToPrepareStatement;
     }
     if (statement) |ptr| {
         return ptr;
