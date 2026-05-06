@@ -12,6 +12,8 @@ pub const DbError = error{
     FailedToGetKey,
     FailedToDeleteKey,
     UnexpectedNullEntry,
+    EphemeralDatabaseNotAllowed,
+    FailedToPrepareStatement,
 };
 
 pub const DatabaseStateError = error{
@@ -65,6 +67,11 @@ pub const DatabaseStateManager = struct {
         if (self.current_state != .Initial) {
             return DatabaseStateError.InvalidState;
         }
+        
+        if (filepath.len == 0) {
+            return DbError.EphemeralDatabaseNotAllowed;
+        }
+
         errdefer self.current_state = .Closed;
 
         const db: *c.sqlite3 = db: {
@@ -82,18 +89,20 @@ pub const DatabaseStateManager = struct {
                 return DbError.FailedToOpenDatabase;
             }
 
-            var error_msg: [*c]u8 = undefined;
-            const failure2 = c.sqlite3_exec(
-                db,
-                "CREATE TABLE IF NOT EXISTS data(id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE NOT NULL, value BLOB NOT NULL)",
-                null,
-                null,
-                &error_msg,
-            );
-            if (failure2 != 0) {
-                std.log.err("Failed to create table: {s}", .{error_msg});
-                c.sqlite3_free(error_msg);
-                return DbError.FailedToCreateTable;
+            if (allow_create) {
+                var error_msg: [*c]u8 = undefined;
+                const failure2 = c.sqlite3_exec(
+                    db,
+                    "CREATE TABLE IF NOT EXISTS data(id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE NOT NULL, value BLOB NOT NULL)",
+                    null,
+                    null,
+                    &error_msg,
+                );
+                if (failure2 != 0) {
+                    std.log.err("Failed to create table: {s}", .{error_msg});
+                    c.sqlite3_free(error_msg);
+                    return DbError.FailedToCreateTable;
+                }
             }
 
             break :db db;

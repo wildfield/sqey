@@ -25,19 +25,23 @@ fn prepareStatement(
     db: *c.sqlite3,
     query: []const u8,
 ) !*c.sqlite3_stmt {
-    var statement: *c.sqlite3_stmt = undefined;
+    var statement: ?*c.sqlite3_stmt = null;
     const failure = c.sqlite3_prepare_v2(
         db,
         @ptrCast(query),
         @intCast(query.len),
-        @ptrCast(&statement),
+        &statement,
         null,
     );
     if (failure != c.SQLITE_OK) {
         std.log.err("Failed to compile statement: {s}", .{c.sqlite3_errmsg(db)});
         return DbError.FailedToExecuteQuery;
     }
-    return statement;
+    if (statement) |ptr| {
+        return ptr;
+    } else {
+        return DbError.FailedToPrepareStatement;
+    }
 }
 
 fn bindText(
@@ -86,7 +90,7 @@ fn getColumnBlob(statement: *c.sqlite3_stmt, column: c_int) ![]const u8 {
     if (blob_ptr) |ptr| {
         return ptr[0..@intCast(c.sqlite3_column_bytes(statement, column))];
     } else {
-        return DbError.UnexpectedNullEntry;
+        return &.{};
     }
 }
 
@@ -97,11 +101,15 @@ fn sqlite3SimpleExec(
     sql: [*c]const u8,
     comptime format: []const u8,
 ) !void {
-    var err_msg: [*c]u8 = undefined;
-    const rollback_code = c.sqlite3_exec(db, sql, null, null, &err_msg);
+    var err_msg: ?[*c]u8 = null;
+    const rollback_code = c.sqlite3_exec(db, sql, null, null, @ptrCast(&err_msg));
     if (rollback_code != 0) {
-        std.log.err(format, .{err_msg});
-        c.sqlite3_free(err_msg);
+        if (err_msg) |msg| {
+            std.log.err(format, .{msg});
+            c.sqlite3_free(msg);
+        } else {
+            std.log.err("Unknown sqlite error", .{});
+        }
         return DbError.FailedToExecuteQuery;
     }
 }
@@ -334,6 +342,8 @@ pub const GetOrElseSetHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
+        errdefer self.rollback(sm);
+
         var key_buffer = std.io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
@@ -353,7 +363,6 @@ pub const GetOrElseSetHandler = struct {
                 return singleEntryFail();
             }
 
-            errdefer self.rollback(sm);
             try self.processStep(sm, .{ .key = key, .value = value });
         }
 
@@ -397,6 +406,7 @@ pub const SetHandler = struct {
     }
 
     pub fn rollback(self: *SetHandler, sm: *DatabaseStateManager) void {
+
         if (self.is_transaction_active) {
             self.is_transaction_active = false;
             sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction: {s}") catch {};
@@ -423,6 +433,8 @@ pub const SetHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
+        errdefer self.rollback(sm);
+
         var key_buffer = std.io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
@@ -442,7 +454,6 @@ pub const SetHandler = struct {
                 return singleEntryFail();
             }
 
-            errdefer self.rollback(sm);
             try self.processStep(sm, .{ .key = key, .value = value });
         }
 
@@ -594,6 +605,8 @@ pub const DeleteHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
+        errdefer self.rollback(sm);
+
         var did_receive_valid_arg = false;
         while (try args.next()) |key| {
             if (!did_receive_valid_arg) {
@@ -603,7 +616,6 @@ pub const DeleteHandler = struct {
                 return singleEntryFail();
             }
 
-            errdefer self.rollback(sm);
             try self.processStep(sm, key);
         }
 
@@ -667,6 +679,8 @@ pub const DeleteIfExistsHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
+        errdefer self.rollback(sm);
+
         var did_receive_valid_arg = false;
         while (try args.next()) |key| {
             if (!did_receive_valid_arg) {
@@ -676,7 +690,6 @@ pub const DeleteIfExistsHandler = struct {
                 return singleEntryFail();
             }
 
-            errdefer self.rollback(sm);
             try self.processStep(sm, key);
         }
         if (!did_receive_valid_arg) {

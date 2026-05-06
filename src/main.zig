@@ -60,7 +60,6 @@ const MAX_STDIN_SIZE = 1024 * 1024;
 
 const DelimiterIteratorError = error{
     SizeTooLarge,
-    UnexpectedZeroRead,
 };
 
 const DelimiterIteratorOptions = struct {
@@ -118,7 +117,7 @@ const DelimiterIterator = struct {
                     }
                 };
 
-                if (number_bytes >= MAX_STDIN_SIZE) {
+                if (number_bytes > MAX_STDIN_SIZE) {
                     std.log.err("The length of token is too long: {d}", .{number_bytes});
                     self.is_done = true;
                     return DelimiterIteratorError.SizeTooLarge;
@@ -126,8 +125,11 @@ const DelimiterIterator = struct {
                     try self.reader.streamExact(&self.input_writer.writer, number_bytes);
                     return self.input_writer.written();
                 } else {
-                    // Zero bytes entries are indicative of an issue
-                    return DelimiterIteratorError.UnexpectedZeroRead;
+                    if (self.is_done) {
+                        return null;
+                    } else {
+                        return &.{};
+                    }
                 }
             }
         } else if (self.is_single_entry) {
@@ -165,7 +167,7 @@ const DelimiterIterator = struct {
                     if (self.is_done) {
                         return null;
                     } else {
-                        return DelimiterIteratorError.UnexpectedZeroRead;
+                        return &.{};
                     }
                 } else {
                     return self.input_writer.written();
@@ -176,7 +178,6 @@ const DelimiterIterator = struct {
 };
 
 const help =
-    \\
     \\Usage: sqey [options] <path to the file> [options] <command> <one or more command arguments>
     \\
     \\Available Commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin
@@ -191,8 +192,6 @@ const help =
     \\-h\--help: Print help
     \\
 ;
-
-const usage = help;
 
 const OptionsParsingError = error{
     MissingArgument,
@@ -211,6 +210,10 @@ const OptionParsingResult = union(OptionParsingResultEnum) {
     Help: void,
 };
 
+fn printHelp() void {
+    _ = std.fs.File.stderr().write(help) catch {};
+}
+
 fn parseOptionsOrArg(
     args: *std.process.ArgIterator,
     initial_options: Options,
@@ -218,7 +221,7 @@ fn parseOptionsOrArg(
     var options = initial_options;
 
     var arg = args.next() orelse {
-        std.log.err(usage, .{});
+        printHelp();
         return error.MissingArgument;
     };
 
@@ -267,7 +270,7 @@ fn parseOptionsOrArg(
             }
 
             arg = args.next() orelse {
-                std.log.err(usage, .{});
+                printHelp();
                 return error.MissingArgument;
             };
         }
@@ -284,7 +287,7 @@ pub fn main() !void {
     const filepath_result = try parseOptionsOrArg(&args, options);
     switch (filepath_result) {
         .Help => {
-            std.log.info(help, .{});
+            printHelp();
             return;
         },
         .OptionsAndArg => |result| {
@@ -294,7 +297,7 @@ pub fn main() !void {
             const command_str_result = try parseOptionsOrArg(&args, options);
             switch (command_str_result) {
                 .Help => {
-                    std.log.info(help, .{});
+                    printHelp();
                     return;
                 },
                 .OptionsAndArg => |command_result| {
