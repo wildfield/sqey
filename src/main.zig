@@ -295,7 +295,7 @@ pub fn main() !void {
                     const command_str = command_result.arg;
                     options = command_result.options;
 
-                    var stdout_buffer: [4096]u8 = undefined;
+                    var stdout_buffer: [65536]u8 = undefined;
                     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
                     const stdout = &stdout_writer.interface;
 
