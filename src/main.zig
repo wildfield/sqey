@@ -77,10 +77,10 @@ const DelimiterIterator = struct {
     is_done: bool = false,
     leftover_args: []const []const u8,
     leftover_args_read_count: usize = 0,
-    input_writer: std.io.Writer.Allocating,
+    input_writer: std.Io.Writer.Allocating,
 
     fn init(allocator: std.mem.Allocator, reader: *std.Io.Reader, leftover_args: [][]const u8, options: DelimiterIteratorOptions) DelimiterIterator {
-        const input_writer = std.io.Writer.Allocating.init(allocator);
+        const input_writer = std.Io.Writer.Allocating.init(allocator);
 
         return .{
             .reader = reader,
@@ -450,7 +450,7 @@ pub fn processArgs(
             try KeyValuesHandler.run(database_manager);
         },
         .KeysLike => {
-            var key_buffer = std.io.Writer.Allocating.init(allocator);
+            var key_buffer = std.Io.Writer.Allocating.init(allocator);
             defer key_buffer.deinit();
 
             const raw_pattern = try args.next() orelse {

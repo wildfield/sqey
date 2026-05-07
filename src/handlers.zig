@@ -170,7 +170,7 @@ pub const GetHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
-        var key_buffer = std.io.Writer.Allocating.init(allocator);
+        var key_buffer = std.Io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
         defer self.close();
@@ -237,7 +237,7 @@ pub const GetOrElseHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
-        var key_buffer = std.io.Writer.Allocating.init(allocator);
+        var key_buffer = std.Io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
         defer self.close();
@@ -356,7 +356,7 @@ pub const GetOrElseSetHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
-        var key_buffer = std.io.Writer.Allocating.init(allocator);
+        var key_buffer = std.Io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
         defer self.close(sm);
@@ -453,7 +453,7 @@ pub const SetHandler = struct {
         options: Options,
     ) !void {
 
-        var key_buffer = std.io.Writer.Allocating.init(allocator);
+        var key_buffer = std.Io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
         defer self.close(sm);
