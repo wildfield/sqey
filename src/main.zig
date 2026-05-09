@@ -21,7 +21,7 @@ const KeysLikeHandler = handlers.KeysLikeHandler;
 const DeleteHandler = handlers.DeleteHandler;
 const DeleteIfExistsHandler = handlers.DeleteIfExistsHandler;
 
-const MessageType = enum {
+const Command = enum {
     Get,
     GetOrElse,
     GetOrElseSet,
@@ -32,19 +32,6 @@ const MessageType = enum {
     Delete,
     DeleteIfExists,
     Stdin,
-};
-
-const Message = union(MessageType) {
-    Get: []const u8,
-    GetOrElse: KeyValuePair,
-    GetOrElseSet: KeyValuePair,
-    Set: KeyValuePair,
-    Keys: void,
-    KeyValues: void,
-    KeysLike: []const u8,
-    Delete: []const u8,
-    DeleteIfExists: []const u8,
-    Stdin: void,
 };
 
 const ArgIteratorWrapper = struct {
@@ -355,31 +342,31 @@ const CommandError = error{
 pub fn parseCommand(
     str: []const u8,
     is_stdin: bool,
-) !MessageType {
+) !Command {
     if (std.mem.eql(u8, str, "get")) {
-        return MessageType.Get;
+        return Command.Get;
     } else if (std.mem.eql(u8, str, "get-or-else")) {
-        return MessageType.GetOrElse;
+        return Command.GetOrElse;
     } else if (std.mem.eql(u8, str, "get-or-else-set")) {
-        return MessageType.GetOrElseSet;
+        return Command.GetOrElseSet;
     } else if (std.mem.eql(u8, str, "set")) {
-        return MessageType.Set;
+        return Command.Set;
     } else if (std.mem.eql(u8, str, "keys")) {
-        return MessageType.Keys;
+        return Command.Keys;
     } else if (std.mem.eql(u8, str, "key-values")) {
-        return MessageType.KeyValues;
+        return Command.KeyValues;
     } else if (std.mem.eql(u8, str, "keys-like")) {
-        return MessageType.KeysLike;
+        return Command.KeysLike;
     } else if (std.mem.eql(u8, str, "delete")) {
-        return MessageType.Delete;
+        return Command.Delete;
     } else if (std.mem.eql(u8, str, "delete-if-exists")) {
-        return MessageType.DeleteIfExists;
+        return Command.DeleteIfExists;
     } else if (std.mem.eql(u8, str, "stdin")) {
         if (is_stdin) {
             std.log.err("Cannot process \"stdin\" while already reading from stdin", .{});
             return CommandError.InvalidCommand;
         } else {
-            return MessageType.Stdin;
+            return Command.Stdin;
         }
     } else {
         std.log.err("Unknown command. Possible commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin", .{});
