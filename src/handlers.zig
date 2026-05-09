@@ -729,3 +729,101 @@ pub const DeleteIfExistsHandler = struct {
         }
     }
 };
+
+pub const RenameHandler = struct {
+    statement: ?*c.sqlite3_stmt = null,
+    is_transaction_active: bool = false,
+
+    fn begin(self: *RenameHandler, sm: *DatabaseStateManager) !void {
+        if (!self.is_transaction_active) {
+            try beginTransaction(sm.db);
+            self.is_transaction_active = true;
+        }
+    }
+
+    fn processStep(self: *RenameHandler, sm: *DatabaseStateManager, src: []const u8, dest: []const u8) !void {
+        if (self.statement == null) {
+            self.statement = try prepareStatement(sm.db, "UPDATE data SET key = ? WHERE key = ?");
+        }
+
+        defer {
+            const reset_code = c.sqlite3_reset(self.statement.?);
+            if (reset_code != c.SQLITE_OK) {
+                std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(sm.db)});
+            }
+        }
+
+        try bindText(sm.db, self.statement.?, 1, dest);
+        try bindText(sm.db, self.statement.?, 2, src);
+
+        const result_code = c.sqlite3_step(self.statement.?);
+        if (result_code != c.SQLITE_DONE) {
+            std.log.err("Failed to rename key: {s}", .{c.sqlite3_errmsg(sm.db)});
+            return DbError.FailedToExecuteQuery;
+        }
+
+        const row_count = c.sqlite3_changes64(sm.db);
+        if (row_count == 0) {
+            std.log.err("Failed to rename entry. Source key not found: \"{s}\"", .{src});
+            return DbError.FailedToRenameKey;
+        }
+    }
+
+    pub fn rollback(self: *RenameHandler, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            rollbackTransaction(sm.db);
+        }
+    }
+
+    pub fn close(self: *RenameHandler, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            commitTransaction(sm.db);
+        }
+        if (self.statement) |stmt| {
+            _ = c.sqlite3_finalize(stmt);
+        }
+    }
+
+    // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally.
+    pub fn run(
+        self: *RenameHandler,
+        comptime is_stdin: bool,
+        allocator: std.mem.Allocator,
+        args: anytype,
+        filepath: [:0]const u8,
+        sm: *DatabaseStateManager,
+        options: Options,
+    ) !void {
+        var key_buffer = std.Io.Writer.Allocating.init(allocator);
+        defer key_buffer.deinit();
+
+        defer self.close(sm);
+        errdefer self.rollback(sm);
+        var did_receive_valid_arg = false;
+        while (try args.next()) |raw_src| {
+            const src = try tempBuffered(is_stdin, &key_buffer, raw_src);
+
+            const dest = try args.next() orelse {
+                std.log.err("Missing destination key for source key \"{s}\"", .{src});
+                return ProcessArgsError.GeneralError;
+            };
+
+            if (!did_receive_valid_arg) {
+                did_receive_valid_arg = true;
+                try sm.open(filepath, false);
+            } else if (options.is_single_entry) {
+                return singleEntryFail();
+            }
+
+            try self.begin(sm);
+            try self.processStep(sm, src, dest);
+        }
+
+        if (!did_receive_valid_arg) {
+            std.log.err("Missing at least one key pair for rename command", .{});
+            return ProcessArgsError.GeneralError;
+        }
+    }
+};
