@@ -50,9 +50,9 @@ const Message = union(MessageType) {
 const ArgIteratorWrapper = struct {
     iterator: *std.process.Args.Iterator,
 
-    // This converts ?[]const u8 to !?[]const u8 such that we can use try with it
+    // This converts "?[:0]const u8" from iterator.next() to !?[]const u8 because we need to use try with it
     // it is needed to make interface consistent between ArgIterator and DelimiterIterator
-    pub fn next(self: *ArgIteratorWrapper) !?[]const u8 {
+    pub fn next(self: ArgIteratorWrapper) !?[]const u8 {
         return self.iterator.next();
     }
 };
@@ -328,14 +328,14 @@ pub fn main(init: std.process.Init) !void {
                     };
                     defer state_manager.close();
 
-                    var wrapper: ArgIteratorWrapper = .{
+                    const wrapper: ArgIteratorWrapper = .{
                         .iterator = &args,
                     };
 
                     try processArgs(
                         false,
                         std.heap.smp_allocator,
-                        &wrapper,
+                        wrapper,
                         command_str,
                         filepath,
                         &state_manager,
