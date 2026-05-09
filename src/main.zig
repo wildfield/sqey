@@ -20,6 +20,7 @@ const KeyValuesHandler = handlers.KeyValuesHandler;
 const KeysLikeHandler = handlers.KeysLikeHandler;
 const DeleteHandler = handlers.DeleteHandler;
 const DeleteIfExistsHandler = handlers.DeleteIfExistsHandler;
+const RenameHandler = handlers.RenameHandler;
 
 const Command = enum {
     Get,
@@ -31,6 +32,7 @@ const Command = enum {
     KeysLike,
     Delete,
     DeleteIfExists,
+    Rename,
     Stdin,
 };
 
@@ -168,7 +170,7 @@ const DelimiterIterator = struct {
 const help =
     \\Usage: sqey [options] <path to the file> [options] <command> <one or more command arguments>
     \\
-    \\Available Commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin
+    \\Available Commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, rename, stdin
     \\
     \\Example: sqey mydb.db set key1 value1 key2 value2 && sqey mydb.db get key1 key2
     \\
@@ -361,6 +363,8 @@ pub fn parseCommand(
         return Command.Delete;
     } else if (std.mem.eql(u8, str, "delete-if-exists")) {
         return Command.DeleteIfExists;
+    } else if (std.mem.eql(u8, str, "rename")) {
+        return Command.Rename;
     } else if (std.mem.eql(u8, str, "stdin")) {
         if (is_stdin) {
             std.log.err("Cannot process \"stdin\" while already reading from stdin", .{});
@@ -369,7 +373,7 @@ pub fn parseCommand(
             return Command.Stdin;
         }
     } else {
-        std.log.err("Unknown command. Possible commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, stdin", .{});
+        std.log.err("Unknown command. Possible commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, rename, stdin", .{});
         return CommandError.InvalidCommand;
     }
 }
@@ -465,6 +469,10 @@ pub fn processArgs(
         .DeleteIfExists => {
             var handler: DeleteIfExistsHandler = .{};
             try handler.run(args, filepath, database_manager, options);
+        },
+        .Rename => {
+            var handler: RenameHandler = .{};
+            try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
         },
         .Stdin => {
             if (!is_stdin) {
