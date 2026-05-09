@@ -1,7 +1,5 @@
 const std = @import("std");
-pub const c = @cImport({
-    @cInclude("sqlite3.h");
-});
+const c = @import("c");
 
 pub const DbError = error{
     FailedToOpenDatabase,

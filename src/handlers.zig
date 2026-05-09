@@ -1,7 +1,7 @@
 const std = @import("std");
+const c = @import("c");
 
 const database = @import("database.zig");
-const c = database.c;
 const utils = @import("utils.zig");
 
 const DbError = database.DbError;

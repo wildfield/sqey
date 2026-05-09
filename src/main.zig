@@ -48,11 +48,11 @@ const Message = union(MessageType) {
 };
 
 const ArgIteratorWrapper = struct {
-    iterator: *std.process.ArgIterator,
+    iterator: *std.process.Args.Iterator,
 
     // This converts ?[]const u8 to !?[]const u8 such that we can use try with it
     // it is needed to make interface consistent between ArgIterator and DelimiterIterator
-    pub fn next(self: *const ArgIteratorWrapper) !?[]const u8 {
+    pub fn next(self: *ArgIteratorWrapper) !?[]const u8 {
         return self.iterator.next();
     }
 };
@@ -212,18 +212,19 @@ const OptionParsingResult = union(OptionParsingResultEnum) {
     Help: void,
 };
 
-fn printHelp() void {
-    _ = std.fs.File.stderr().write(help) catch {};
+fn printHelp(io: std.Io) void {
+    _ = std.Io.File.stderr().writeStreamingAll(io, help) catch {};
 }
 
 fn parseOptionsOrArg(
-    args: *std.process.ArgIterator,
+    args: *std.process.Args.Iterator,
     initial_options: Options,
+    io: std.Io,
 ) OptionsParsingError!OptionParsingResult {
     var options = initial_options;
 
     var arg = args.next() orelse {
-        printHelp();
+        printHelp(io);
         return OptionsParsingError.MissingArgument;
     };
 
@@ -274,13 +275,13 @@ fn parseOptionsOrArg(
             for (options_arg) |byte| {
                 const is_valid = byte == '0' or byte == 'b' or byte == 's' or byte == 'r' or byte == '-';
                 if (!is_valid) {
-                    printHelp();
+                    printHelp(io);
                     return OptionsParsingError.UnknownFlag;
                 }
             }
 
             arg = args.next() orelse {
-                printHelp();
+                printHelp(io);
                 return OptionsParsingError.MissingArgument;
             };
         }
@@ -289,25 +290,25 @@ fn parseOptionsOrArg(
     return .{ .OptionsAndArg = .{ .options = options, .arg = arg } };
 }
 
-pub fn main() !void {
-    var args = std.process.args();
+pub fn main(init: std.process.Init) !void {
+    var args = std.process.Args.iterate(init.minimal.args);
     _ = args.skip();
 
     var options: Options = .{};
-    const filepath_result = try parseOptionsOrArg(&args, options);
+    const filepath_result = try parseOptionsOrArg(&args, options, init.io);
     switch (filepath_result) {
         .Help => {
-            printHelp();
+            printHelp(init.io);
             return;
         },
         .OptionsAndArg => |result| {
             const filepath = result.arg;
             options = result.options;
 
-            const command_str_result = try parseOptionsOrArg(&args, options);
+            const command_str_result = try parseOptionsOrArg(&args, options, init.io);
             switch (command_str_result) {
                 .Help => {
-                    printHelp();
+                    printHelp(init.io);
                     return;
                 },
                 .OptionsAndArg => |command_result| {
@@ -315,7 +316,7 @@ pub fn main() !void {
                     options = command_result.options;
 
                     var stdout_buffer: [65536]u8 = undefined;
-                    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+                    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
                     const stdout = &stdout_writer.interface;
 
                     var state_manager: DatabaseStateManager = .{
@@ -327,18 +328,19 @@ pub fn main() !void {
                     };
                     defer state_manager.close();
 
-                    const wrapper: ArgIteratorWrapper = .{
+                    var wrapper: ArgIteratorWrapper = .{
                         .iterator = &args,
                     };
 
                     try processArgs(
                         false,
                         std.heap.smp_allocator,
-                        wrapper,
+                        &wrapper,
                         command_str,
                         filepath,
                         &state_manager,
                         options,
+                        init.io,
                     );
                 },
             }
@@ -393,6 +395,7 @@ pub fn processArgs(
     filepath: [:0]const u8,
     database_manager: *DatabaseStateManager,
     options: Options,
+    io: std.Io,
 ) !void {
     const command = if (is_stdin) command: {
         if (try args.next()) |arg| {
@@ -479,7 +482,7 @@ pub fn processArgs(
         .Stdin => {
             if (!is_stdin) {
                 var stdin_buffer: [4096]u8 = undefined;
-                var stdin_reader = std.fs.File.stdin().reader(&stdin_buffer);
+                var stdin_reader = std.Io.File.stdin().reader(io, &stdin_buffer);
                 const stdin = &stdin_reader.interface;
 
                 var trailing_args_buffer = try std.ArrayList([]const u8).initCapacity(allocator, 8);
@@ -516,6 +519,7 @@ pub fn processArgs(
                     filepath,
                     database_manager,
                     options,
+                    io,
                 );
             } else {
                 std.log.err("Processing stdin from stdin", .{});
