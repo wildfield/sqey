@@ -106,25 +106,34 @@ fn sqlite3SimpleExec(
     }
 }
 
-fn beginTransaction(
-    db: *c.sqlite3,
-) !void {
-    try sqlite3SimpleExec(db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
-}
+pub const Transaction = struct {
+    is_transaction_active: bool = false,
 
-// Swallows errors, primarily used in defer blocks
-fn commitTransaction(
-    db: *c.sqlite3,
-) void {
-    sqlite3SimpleExec(db, "COMMIT TRANSACTION", "Failed to commit transaction {s}") catch {};
-}
 
-// Swallows errors, primarily used in defer blocks
-fn rollbackTransaction(
-    db: *c.sqlite3,
-) void {
-    sqlite3SimpleExec(db, "ROLLBACK TRANSACTION", "Failed to rollback transaction {s}") catch {};
-}
+    // Propagates errors
+    fn begin(self: *Transaction, sm: *DatabaseStateManager) !void {
+        if (!self.is_transaction_active) {
+            try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
+            self.is_transaction_active = true;
+        }
+    }
+
+    // Swallows errors. Normally used in defer statements
+    fn rollback(self: *Transaction, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction {s}") catch {};
+        }
+    }
+
+    // Swallows errors. Normally used in defer statements
+    fn commit(self: *Transaction, sm: *DatabaseStateManager) void {
+        if (self.is_transaction_active) {
+            self.is_transaction_active = false;
+            sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction {s}") catch {};
+        }
+    }
+};
 
 pub const GetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
@@ -269,13 +278,10 @@ pub const GetOrElseHandler = struct {
 pub const GetOrElseSetHandler = struct {
     get_statement: ?*c.sqlite3_stmt = null,
     insert_statement: ?*c.sqlite3_stmt = null,
-    is_transaction_active: bool = false,
+    tx: Transaction = .{},
 
     fn begin(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) !void {
-        if (!self.is_transaction_active) {
-            try beginTransaction(sm.db);
-            self.is_transaction_active = true;
-        }
+        try self.tx.begin(sm);
     }
 
     fn processStep(self: *GetOrElseSetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
@@ -327,17 +333,11 @@ pub const GetOrElseSetHandler = struct {
     }
 
     pub fn rollback(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            rollbackTransaction(sm.db);
-        }
+        self.tx.rollback(sm);
     }
 
     pub fn close(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            commitTransaction(sm.db);
-        }
+        self.tx.commit(sm);
         if (self.get_statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -390,13 +390,10 @@ pub const GetOrElseSetHandler = struct {
 
 pub const SetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
-    is_transaction_active: bool = false,
+    tx: Transaction = .{},
 
     fn begin(self: *SetHandler, sm: *DatabaseStateManager) !void {
-        if (!self.is_transaction_active) {
-            try beginTransaction(sm.db);
-            self.is_transaction_active = true;
-        }
+        try self.tx.begin(sm);
     }
 
     fn processStep(self: *SetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
@@ -425,18 +422,11 @@ pub const SetHandler = struct {
     }
 
     pub fn rollback(self: *SetHandler, sm: *DatabaseStateManager) void {
-
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            rollbackTransaction(sm.db);
-        }
+        self.tx.rollback(sm);
     }
 
     pub fn close(self: *SetHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            commitTransaction(sm.db);
-        }
+        self.tx.commit(sm);
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -569,13 +559,10 @@ pub const KeysLikeHandler = struct {
 
 pub const DeleteHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
-    is_transaction_active: bool = false,
+    tx: Transaction = .{},
 
     fn begin(self: *DeleteHandler, sm: *DatabaseStateManager) !void {
-        if (!self.is_transaction_active) {
-            try beginTransaction(sm.db);
-            self.is_transaction_active = true;
-        }
+        try self.tx.begin(sm);
     }
 
     fn processStep(self: *DeleteHandler, sm: *DatabaseStateManager, key: []const u8) !void {
@@ -606,17 +593,11 @@ pub const DeleteHandler = struct {
     }
 
     pub fn rollback(self: *DeleteHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            rollbackTransaction(sm.db);
-        }
+        self.tx.rollback(sm);
     }
 
     pub fn close(self: *DeleteHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            commitTransaction(sm.db);
-        }
+        self.tx.commit(sm);
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -654,13 +635,10 @@ pub const DeleteHandler = struct {
 
 pub const DeleteIfExistsHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
-    is_transaction_active: bool = false,
+    tx: Transaction = .{},
 
     fn begin(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) !void {
-        if (!self.is_transaction_active) {
-            try beginTransaction(sm.db);
-            self.is_transaction_active = true;
-        }
+        try self.tx.begin(sm);
     }
 
     fn processStep(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager, key: []const u8) !void {
@@ -685,17 +663,11 @@ pub const DeleteIfExistsHandler = struct {
     }
 
     pub fn rollback(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            rollbackTransaction(sm.db);
-        }
+        self.tx.rollback(sm);
     }
 
     pub fn close(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            commitTransaction(sm.db);
-        }
+        self.tx.commit(sm);
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -732,13 +704,10 @@ pub const DeleteIfExistsHandler = struct {
 
 pub const RenameHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
-    is_transaction_active: bool = false,
+    tx: Transaction = .{},
 
     fn begin(self: *RenameHandler, sm: *DatabaseStateManager) !void {
-        if (!self.is_transaction_active) {
-            try beginTransaction(sm.db);
-            self.is_transaction_active = true;
-        }
+        try self.tx.begin(sm);
     }
 
     fn processStep(self: *RenameHandler, sm: *DatabaseStateManager, src: []const u8, dest: []const u8) !void {
@@ -770,17 +739,11 @@ pub const RenameHandler = struct {
     }
 
     pub fn rollback(self: *RenameHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            rollbackTransaction(sm.db);
-        }
+        self.tx.rollback(sm);
     }
 
     pub fn close(self: *RenameHandler, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
-            commitTransaction(sm.db);
-        }
+        self.tx.commit(sm);
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
