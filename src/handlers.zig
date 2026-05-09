@@ -280,10 +280,6 @@ pub const GetOrElseSetHandler = struct {
     insert_statement: ?*c.sqlite3_stmt = null,
     tx: Transaction = .{},
 
-    fn begin(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) !void {
-        try self.tx.begin(sm);
-    }
-
     fn processStep(self: *GetOrElseSetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.get_statement == null) {
             self.get_statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
@@ -332,10 +328,6 @@ pub const GetOrElseSetHandler = struct {
         }
     }
 
-    pub fn rollback(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
-        self.tx.rollback(sm);
-    }
-
     pub fn close(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
         self.tx.commit(sm);
         if (self.get_statement) |stmt| {
@@ -360,7 +352,7 @@ pub const GetOrElseSetHandler = struct {
         defer key_buffer.deinit();
 
         defer self.close(sm);
-        errdefer self.rollback(sm);
+        errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
             const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
@@ -377,7 +369,7 @@ pub const GetOrElseSetHandler = struct {
                 return singleEntryFail();
             }
 
-            try self.begin(sm);
+            try self.tx.begin(sm);
             try self.processStep(sm, .{ .key = key, .value = value });
         }
 
@@ -391,10 +383,6 @@ pub const GetOrElseSetHandler = struct {
 pub const SetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     tx: Transaction = .{},
-
-    fn begin(self: *SetHandler, sm: *DatabaseStateManager) !void {
-        try self.tx.begin(sm);
-    }
 
     fn processStep(self: *SetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
         if (self.statement == null) {
@@ -421,10 +409,6 @@ pub const SetHandler = struct {
         }
     }
 
-    pub fn rollback(self: *SetHandler, sm: *DatabaseStateManager) void {
-        self.tx.rollback(sm);
-    }
-
     pub fn close(self: *SetHandler, sm: *DatabaseStateManager) void {
         self.tx.commit(sm);
         if (self.statement) |stmt| {
@@ -447,7 +431,7 @@ pub const SetHandler = struct {
         defer key_buffer.deinit();
 
         defer self.close(sm);
-        errdefer self.rollback(sm);
+        errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
             const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
@@ -464,7 +448,7 @@ pub const SetHandler = struct {
                 return singleEntryFail();
             }
 
-            try self.begin(sm);
+            try self.tx.begin(sm);
             try self.processStep(sm, .{ .key = key, .value = value });
         }
 
@@ -561,10 +545,6 @@ pub const DeleteHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     tx: Transaction = .{},
 
-    fn begin(self: *DeleteHandler, sm: *DatabaseStateManager) !void {
-        try self.tx.begin(sm);
-    }
-
     fn processStep(self: *DeleteHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "DELETE FROM data WHERE key = ?");
@@ -592,10 +572,6 @@ pub const DeleteHandler = struct {
         }
     }
 
-    pub fn rollback(self: *DeleteHandler, sm: *DatabaseStateManager) void {
-        self.tx.rollback(sm);
-    }
-
     pub fn close(self: *DeleteHandler, sm: *DatabaseStateManager) void {
         self.tx.commit(sm);
         if (self.statement) |stmt| {
@@ -612,7 +588,7 @@ pub const DeleteHandler = struct {
         options: Options,
     ) !void {
         defer self.close(sm);
-        errdefer self.rollback(sm);
+        errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |key| {
             if (!did_receive_valid_arg) {
@@ -622,7 +598,7 @@ pub const DeleteHandler = struct {
                 return singleEntryFail();
             }
 
-            try self.begin(sm);
+            try self.tx.begin(sm);
             try self.processStep(sm, key);
         }
 
@@ -636,10 +612,6 @@ pub const DeleteHandler = struct {
 pub const DeleteIfExistsHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     tx: Transaction = .{},
-
-    fn begin(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) !void {
-        try self.tx.begin(sm);
-    }
 
     fn processStep(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager, key: []const u8) !void {
         if (self.statement == null) {
@@ -662,10 +634,6 @@ pub const DeleteIfExistsHandler = struct {
         }
     }
 
-    pub fn rollback(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
-        self.tx.rollback(sm);
-    }
-
     pub fn close(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
         self.tx.commit(sm);
         if (self.statement) |stmt| {
@@ -682,7 +650,7 @@ pub const DeleteIfExistsHandler = struct {
         options: Options,
     ) !void {
         defer self.close(sm);
-        errdefer self.rollback(sm);
+        errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |key| {
             if (!did_receive_valid_arg) {
@@ -692,7 +660,7 @@ pub const DeleteIfExistsHandler = struct {
                 return singleEntryFail();
             }
 
-            try self.begin(sm);
+            try self.tx.begin(sm);
             try self.processStep(sm, key);
         }
         if (!did_receive_valid_arg) {
@@ -705,10 +673,6 @@ pub const DeleteIfExistsHandler = struct {
 pub const RenameHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     tx: Transaction = .{},
-
-    fn begin(self: *RenameHandler, sm: *DatabaseStateManager) !void {
-        try self.tx.begin(sm);
-    }
 
     fn processStep(self: *RenameHandler, sm: *DatabaseStateManager, src: []const u8, dest: []const u8) !void {
         if (self.statement == null) {
@@ -738,10 +702,6 @@ pub const RenameHandler = struct {
         }
     }
 
-    pub fn rollback(self: *RenameHandler, sm: *DatabaseStateManager) void {
-        self.tx.rollback(sm);
-    }
-
     pub fn close(self: *RenameHandler, sm: *DatabaseStateManager) void {
         self.tx.commit(sm);
         if (self.statement) |stmt| {
@@ -763,7 +723,7 @@ pub const RenameHandler = struct {
         defer key_buffer.deinit();
 
         defer self.close(sm);
-        errdefer self.rollback(sm);
+        errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_src| {
             const src = try tempBuffered(is_stdin, &key_buffer, raw_src);
@@ -780,7 +740,7 @@ pub const RenameHandler = struct {
                 return singleEntryFail();
             }
 
-            try self.begin(sm);
+            try self.tx.begin(sm);
             try self.processStep(sm, src, dest);
         }
 
