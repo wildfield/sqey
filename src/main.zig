@@ -481,7 +481,7 @@ pub fn processArgs(
         },
         .Stdin => {
             if (!is_stdin) {
-                var stdin_buffer: [4096]u8 = undefined;
+                var stdin_buffer: [64 * 1024]u8 = undefined;
                 var stdin_reader = std.Io.File.stdin().reader(io, &stdin_buffer);
                 const stdin = &stdin_reader.interface;
 
