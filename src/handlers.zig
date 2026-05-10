@@ -327,8 +327,7 @@ pub const GetOrElseSetHandler = struct {
         }
     }
 
-    pub fn close(self: *GetOrElseSetHandler, sm: *DatabaseStateManager) void {
-        self.tx.commit(sm);
+    pub fn close(self: *GetOrElseSetHandler) void {
         if (self.get_statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -355,7 +354,8 @@ pub const GetOrElseSetHandler = struct {
             return ProcessArgsError.GeneralError;
         }
 
-        defer self.close(sm);
+        defer self.close();
+        defer self.tx.commit(sm);
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
@@ -413,8 +413,7 @@ pub const SetHandler = struct {
         }
     }
 
-    pub fn close(self: *SetHandler, sm: *DatabaseStateManager) void {
-        self.tx.commit(sm);
+    pub fn close(self: *SetHandler) void {
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -438,7 +437,8 @@ pub const SetHandler = struct {
             return ProcessArgsError.GeneralError;
         }
 
-        defer self.close(sm);
+        defer self.close();
+        defer self.tx.commit(sm);
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
@@ -580,8 +580,7 @@ pub const DeleteHandler = struct {
         }
     }
 
-    pub fn close(self: *DeleteHandler, sm: *DatabaseStateManager) void {
-        self.tx.commit(sm);
+    pub fn close(self: *DeleteHandler) void {
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -600,7 +599,8 @@ pub const DeleteHandler = struct {
             return ProcessArgsError.GeneralError;
         }
 
-        defer self.close(sm);
+        defer self.close();
+        defer self.tx.commit(sm);
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |key| {
@@ -647,8 +647,7 @@ pub const DeleteIfExistsHandler = struct {
         }
     }
 
-    pub fn close(self: *DeleteIfExistsHandler, sm: *DatabaseStateManager) void {
-        self.tx.commit(sm);
+    pub fn close(self: *DeleteIfExistsHandler) void {
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -667,7 +666,8 @@ pub const DeleteIfExistsHandler = struct {
             return ProcessArgsError.GeneralError;
         }
 
-        defer self.close(sm);
+        defer self.close();
+        defer self.tx.commit(sm);
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |key| {
@@ -720,8 +720,7 @@ pub const RenameHandler = struct {
         }
     }
 
-    pub fn close(self: *RenameHandler, sm: *DatabaseStateManager) void {
-        self.tx.commit(sm);
+    pub fn close(self: *RenameHandler) void {
         if (self.statement) |stmt| {
             _ = c.sqlite3_finalize(stmt);
         }
@@ -745,7 +744,8 @@ pub const RenameHandler = struct {
             return ProcessArgsError.GeneralError;
         }
 
-        defer self.close(sm);
+        defer self.close();
+        defer self.tx.commit(sm);
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_src| {
