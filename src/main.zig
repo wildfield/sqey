@@ -477,15 +477,15 @@ pub fn processArgs(
             try KeyValuesHandler.run(database_manager);
         },
         .KeysLike => {
-            var key_buffer = std.Io.Writer.Allocating.init(allocator);
-            defer key_buffer.deinit();
+            if (options.is_single_entry) {
+                std.log.err("Key operations are not allowed with single entry flag", .{});
+                return ProcessArgsError.GeneralError;
+            }
 
-            const raw_pattern = try args.next() orelse {
+            const pattern = try args.next() orelse {
                 std.log.err("Missing pattern for \"keys-like\"", .{});
                 return ProcessArgsError.GeneralError;
             };
-
-            const pattern = try tempBuffered(is_stdin, &key_buffer, raw_pattern);
 
             if (try args.next()) |_| {
                 std.log.err("\"keys-like\" command doesn't accept any extra arguments after the pattern", .{});
