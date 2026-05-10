@@ -68,7 +68,7 @@ const DelimiterIterator = struct {
     leftover_args_read_count: usize = 0,
     input_writer: std.Io.Writer.Allocating,
 
-    fn init(allocator: std.mem.Allocator, reader: *std.Io.Reader, leftover_args: [][]const u8, options: DelimiterIteratorOptions) DelimiterIterator {
+    fn init(allocator: std.mem.Allocator, reader: *std.Io.Reader, leftover_args: []const []const u8, options: DelimiterIteratorOptions) DelimiterIterator {
         const input_writer = std.Io.Writer.Allocating.init(allocator);
 
         return .{

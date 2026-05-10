@@ -87,17 +87,17 @@ fn getColumnBlob(statement: *c.sqlite3_stmt, column: c_int) ![]const u8 {
 }
 
 // Executes simple statements that do not return values or take parameters.
-// `format` must take a single `{s}` as a format argument.
+// `error_message` must take a single `{s}` as a format argument.
 fn sqlite3SimpleExec(
     db: *c.sqlite3,
     sql: [*c]const u8,
-    comptime format: []const u8,
+    comptime error_message: []const u8,
 ) !void {
     var err_msg: ?[*c]u8 = null;
     const rollback_code = c.sqlite3_exec(db, sql, null, null, @ptrCast(&err_msg));
     if (rollback_code != 0) {
         if (err_msg) |msg| {
-            std.log.err(format, .{msg});
+            std.log.err(error_message, .{msg});
             c.sqlite3_free(msg);
         } else {
             std.log.err("Unknown sqlite error", .{});
@@ -107,29 +107,29 @@ fn sqlite3SimpleExec(
 }
 
 pub const Transaction = struct {
-    is_transaction_active: bool = false,
+    active: bool = false,
 
 
     // Propagates errors
     fn begin(self: *Transaction, sm: *DatabaseStateManager) !void {
-        if (!self.is_transaction_active) {
+        if (!self.active) {
             try sqlite3SimpleExec(sm.db, "BEGIN TRANSACTION", "Failed to begin transaction {s}");
-            self.is_transaction_active = true;
+            self.active = true;
         }
     }
 
     // Swallows errors. Normally used in defer statements
     fn rollback(self: *Transaction, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
+        if (self.active) {
+            self.active = false;
             sqlite3SimpleExec(sm.db, "ROLLBACK TRANSACTION", "Failed to rollback transaction {s}") catch {};
         }
     }
 
     // Swallows errors. Normally used in defer statements
     fn commit(self: *Transaction, sm: *DatabaseStateManager) void {
-        if (self.is_transaction_active) {
-            self.is_transaction_active = false;
+        if (self.active) {
+            self.active = false;
             sqlite3SimpleExec(sm.db, "COMMIT TRANSACTION", "Failed to commit transaction {s}") catch {};
         }
     }
