@@ -180,6 +180,7 @@ const help =
     \\-s: Single entry input/output
     \\-r: Reverse output order for some commands that print keys (keys, key-values, ...)
     \\-n: Allow creating the database file if it does not exist
+    \\-o: Open the database in readonly mode. Write operations will fail
     \\-h\--help: Print help
     \\
 ;
@@ -262,13 +263,28 @@ fn parseOptionsOrArg(
                 options.is_reverse_order_output = true;
             }
 
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'o')) {
+                if (!options.allow_create) {
+                    options.is_readonly = true;
+                } else {
+                    std.log.err("-n and -o are mutually exclusive", .{});
+                    return OptionsParsingError.ConflictingOptions;
+                }
+            }
+
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'n')) {
-                options.allow_create = true;
+                if (!options.is_readonly) {
+                    options.allow_create = true;
+                } else {
+                    std.log.err("-n and -o are mutually exclusive", .{});
+                    return OptionsParsingError.ConflictingOptions;
+                }
             }
 
             for (options_arg) |byte| {
-                const is_valid = byte == '0' or byte == 'b' or byte == 's' or byte == 'r' or byte == 'n' or byte == '-';
-                if (!is_valid) {
+                const valid_flags = "-0bsrno";
+                const is_valid_flag = std.mem.containsAtLeastScalar(u8, valid_flags, 1, byte);
+                if (!is_valid_flag) {
                     printHelp(io);
                     return OptionsParsingError.UnknownFlag;
                 }
@@ -319,6 +335,7 @@ pub fn main(init: std.process.Init) !void {
                         .is_binary_protocol = options.is_binary_protocol,
                         .is_single_entry = options.is_single_entry,
                         .is_reverse_order_output = options.is_reverse_order_output,
+                        .is_readonly = options.is_readonly,
                     };
                     defer state_manager.close();
 

@@ -56,6 +56,7 @@ pub const DatabaseStateManager = struct {
     is_binary_protocol: bool,
     is_single_entry: bool,
     is_reverse_order_output: bool,
+    is_readonly: bool,
     db: *c.sqlite3 = undefined,
 
     pub fn open(self: *DatabaseStateManager, filepath: [:0]const u8, allow_create: bool) !void {
@@ -71,12 +72,12 @@ pub const DatabaseStateManager = struct {
 
         const db: *c.sqlite3 = db: {
             var db: *c.sqlite3 = undefined;
-            var flags: c_int = c.SQLITE_OPEN_READWRITE;
-            if (allow_create) {
+            var flags: c_int = if (self.is_readonly) c.SQLITE_OPEN_READONLY else c.SQLITE_OPEN_READWRITE;
+            if (!self.is_readonly and allow_create) {
                 flags |= c.SQLITE_OPEN_CREATE;
             }
             const failure = c.sqlite3_open_v2(filepath, @ptrCast(&db), flags, null);
-            errdefer _ = c.sqlite3_close(db); 
+            errdefer _ = c.sqlite3_close(db);
 
             if (failure != 0) {
                 std.log.err("Failed to open database: {s}", .{c.sqlite3_errmsg(db)});
@@ -84,7 +85,7 @@ pub const DatabaseStateManager = struct {
                 return DbError.FailedToOpenDatabase;
             }
 
-            if (allow_create) {
+            if (!self.is_readonly and allow_create) {
                 var error_msg: [*c]u8 = undefined;
                 const failure2 = c.sqlite3_exec(
                     db,

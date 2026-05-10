@@ -109,7 +109,6 @@ fn sqlite3SimpleExec(
 pub const Transaction = struct {
     active: bool = false,
 
-
     // Propagates errors
     fn begin(self: *Transaction, sm: *DatabaseStateManager) !void {
         if (!self.active) {
@@ -351,6 +350,11 @@ pub const GetOrElseSetHandler = struct {
         var key_buffer = std.Io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
 
+        if (options.is_readonly) {
+            std.log.err("Write operation is not allowed in readonly mode", .{});
+            return ProcessArgsError.GeneralError;
+        }
+
         defer self.close(sm);
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
@@ -426,9 +430,13 @@ pub const SetHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
-
         var key_buffer = std.Io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
+
+        if (options.is_readonly) {
+            std.log.err("Write operation is not allowed in readonly mode", .{});
+            return ProcessArgsError.GeneralError;
+        }
 
         defer self.close(sm);
         errdefer self.tx.rollback(sm);
@@ -587,6 +595,11 @@ pub const DeleteHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
+        if (options.is_readonly) {
+            std.log.err("Write operation is not allowed in readonly mode", .{});
+            return ProcessArgsError.GeneralError;
+        }
+
         defer self.close(sm);
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
@@ -649,6 +662,11 @@ pub const DeleteIfExistsHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
+        if (options.is_readonly) {
+            std.log.err("Write operation is not allowed in readonly mode", .{});
+            return ProcessArgsError.GeneralError;
+        }
+
         defer self.close(sm);
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
@@ -721,6 +739,11 @@ pub const RenameHandler = struct {
     ) !void {
         var key_buffer = std.Io.Writer.Allocating.init(allocator);
         defer key_buffer.deinit();
+
+        if (options.is_readonly) {
+            std.log.err("Write operation is not allowed in readonly mode", .{});
+            return ProcessArgsError.GeneralError;
+        }
 
         defer self.close(sm);
         errdefer self.tx.rollback(sm);
