@@ -509,8 +509,10 @@ pub fn processArgs(
         },
         .Stdin => {
             if (!is_stdin) {
-                var stdin_buffer: [64 * 1024]u8 = undefined;
-                var stdin_reader = std.Io.File.stdin().reader(io, &stdin_buffer);
+                const stdin_buffer = try allocator.alloc(u8, 64 * 1024);
+                defer allocator.free(stdin_buffer);
+
+                var stdin_reader = std.Io.File.stdin().reader(io, stdin_buffer);
                 const stdin = &stdin_reader.interface;
 
                 var trailing_args_buffer = try std.ArrayList([]const u8).initCapacity(allocator, 8);
