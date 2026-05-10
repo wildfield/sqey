@@ -40,7 +40,7 @@ const ArgIteratorWrapper = struct {
     iterator: *std.process.Args.Iterator,
 
     // This converts "?[:0]const u8" from iterator.next() to !?[]const u8 because we need to use try with it
-    // it is needed to make interface consistent between ArgIterator and DelimiterIterator
+    // it is needed to make interface consistent between ArgIterator and StdinIterator
     pub fn next(self: ArgIteratorWrapper) !?[]const u8 {
         return self.iterator.next();
     }
@@ -48,17 +48,17 @@ const ArgIteratorWrapper = struct {
 
 const MAX_STDIN_SIZE = 1024 * 1024;
 
-const DelimiterIteratorError = error{
+const StdinIteratorError = error{
     SizeTooLarge,
 };
 
-const DelimiterIteratorOptions = struct {
+const StdinIteratorOptions = struct {
     delimiter: u8,
     is_binary_protocol: bool,
     is_single_entry: bool,
 };
 
-const DelimiterIterator = struct {
+const StdinIterator = struct {
     reader: *std.Io.Reader,
     delimiter: u8,
     is_binary_protocol: bool,
@@ -68,7 +68,7 @@ const DelimiterIterator = struct {
     leftover_args_read_count: usize = 0,
     input_writer: std.Io.Writer.Allocating,
 
-    fn init(allocator: std.mem.Allocator, reader: *std.Io.Reader, leftover_args: []const []const u8, options: DelimiterIteratorOptions) DelimiterIterator {
+    fn init(allocator: std.mem.Allocator, reader: *std.Io.Reader, leftover_args: []const []const u8, options: StdinIteratorOptions) StdinIterator {
         const input_writer = std.Io.Writer.Allocating.init(allocator);
 
         return .{
@@ -81,12 +81,12 @@ const DelimiterIterator = struct {
         };
     }
 
-    fn deinit(self: *DelimiterIterator) void {
+    fn deinit(self: *StdinIterator) void {
         self.input_writer.deinit();
     }
 
     // Calling next invalidates the result from previous call, except when the iterator is done
-    pub fn next(self: *DelimiterIterator) !?[]const u8 {
+    pub fn next(self: *StdinIterator) !?[]const u8 {
         if (self.leftover_args_read_count < self.leftover_args.len) {
             self.leftover_args_read_count += 1;
             return self.leftover_args[self.leftover_args_read_count - 1];
@@ -110,7 +110,7 @@ const DelimiterIterator = struct {
                 if (number_bytes > MAX_STDIN_SIZE) {
                     std.log.err("The length of token is too long: {d}", .{number_bytes});
                     self.is_done = true;
-                    return DelimiterIteratorError.SizeTooLarge;
+                    return StdinIteratorError.SizeTooLarge;
                 } else if (number_bytes > 0) {
                     try self.reader.streamExact(&self.input_writer.writer, number_bytes);
                     return self.input_writer.written();
@@ -525,7 +525,7 @@ pub fn processArgs(
                     try trailing_args_buffer.append(allocator, try allocator.dupe(u8, arg));
                 }
 
-                var iterator = DelimiterIterator.init(
+                var iterator = StdinIterator.init(
                     allocator,
                     stdin,
                     trailing_args_buffer.items,
