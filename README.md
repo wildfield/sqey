@@ -52,18 +52,30 @@ All commands that accept keys or key-value pairs can accept more than one in a s
 
 ```bash
 # Store and retrieve values
-sqey example.db set name Alice age 30 city London
-sqey example.db get name age city
+sqey example1.db set name Alice age 30 city London
+sqey example1.db get name age city
+# Alice
+# 30
+# London
 
 # Read key-value pairs from stdin
-echo -e "foo\nbar\nbaz\nqux" | sqey example.db stdin set
-sqey example.db keys  # foo, baz
+echo -e "foo\nbar\nbaz\nqux" | sqey example2.db stdin set
+sqey example2.db keys
+# foo
+# baz
 
-# Read-only access
-sqey example.db -o get name
+# Key-values in the reverse order of keys
+sqey example2.db -r key-values
+# baz
+# qux
+# foo
+# bar
 
-# Create DB on first use
-sqey new.db -n get-or-else-set k1 v1
+# Create DB on first use (`get-or-else` doesn't write the default value)
+sqey new.db -n get-or-else planet unknown
+# unknown
+sqey new.db keys
 ```
 
 Options can be combined: `sqey example.db -rn keys` (reverse, create-if-missing).
+
