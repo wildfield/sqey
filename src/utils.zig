@@ -10,6 +10,7 @@ pub const Options = struct {
     is_binary_protocol: bool = false,
     is_reverse_order_output: bool = false,
     is_single_entry: bool = false,
+    allow_create: bool = false,
 };
 
 pub const ProcessArgsError = error{

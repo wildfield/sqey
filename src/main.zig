@@ -179,6 +179,7 @@ const help =
     \\-b: Output: use binary format when printing. Input: use binary format when using "stdin". Binary format: instead of terminator, each token is preceded by a 32-bit unsigned little endian length
     \\-s: Single entry input/output
     \\-r: Reverse output order for some commands that print keys (keys, key-values, ...)
+    \\-n: Allow creating the database file if it does not exist
     \\-h\--help: Print help
     \\
 ;
@@ -261,8 +262,12 @@ fn parseOptionsOrArg(
                 options.is_reverse_order_output = true;
             }
 
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'n')) {
+                options.allow_create = true;
+            }
+
             for (options_arg) |byte| {
-                const is_valid = byte == '0' or byte == 'b' or byte == 's' or byte == 'r' or byte == '-';
+                const is_valid = byte == '0' or byte == 'b' or byte == 's' or byte == 'r' or byte == 'n' or byte == '-';
                 if (!is_valid) {
                     printHelp(io);
                     return OptionsParsingError.UnknownFlag;
@@ -426,7 +431,7 @@ pub fn processArgs(
                 return ProcessArgsError.GeneralError;
             }
 
-            try database_manager.open(filepath, true);
+            try database_manager.open(filepath, options.allow_create);
             try KeysHandler.run(database_manager);
         },
         .KeyValues => {
@@ -440,7 +445,7 @@ pub fn processArgs(
                 return ProcessArgsError.GeneralError;
             }
 
-            try database_manager.open(filepath, true);
+            try database_manager.open(filepath, options.allow_create);
             try KeyValuesHandler.run(database_manager);
         },
         .KeysLike => {
@@ -459,7 +464,7 @@ pub fn processArgs(
                 return ProcessArgsError.GeneralError;
             }
 
-            try database_manager.open(filepath, true);
+            try database_manager.open(filepath, options.allow_create);
             try KeysLikeHandler.run(database_manager, pattern);
         },
         .Delete => {

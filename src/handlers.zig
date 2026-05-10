@@ -189,7 +189,7 @@ pub const GetHandler = struct {
 
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
-                try sm.open(filepath, false);
+                try sm.open(filepath, options.allow_create);
             } else if (options.is_single_entry) {
                 return singleEntryFail();
             }
@@ -261,7 +261,7 @@ pub const GetOrElseHandler = struct {
 
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
-                try sm.open(filepath, true);
+                try sm.open(filepath, options.allow_create);
             } else if (options.is_single_entry) {
                 return singleEntryFail();
             }
@@ -655,7 +655,7 @@ pub const DeleteIfExistsHandler = struct {
         while (try args.next()) |key| {
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
-                try sm.open(filepath, true);
+                try sm.open(filepath, options.allow_create);
             } else if (options.is_single_entry) {
                 return singleEntryFail();
             }
@@ -735,7 +735,7 @@ pub const RenameHandler = struct {
 
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
-                try sm.open(filepath, false);
+                try sm.open(filepath, options.allow_create);
             } else if (options.is_single_entry) {
                 return singleEntryFail();
             }
