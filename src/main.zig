@@ -168,20 +168,31 @@ const DelimiterIterator = struct {
 };
 
 const help =
-    \\Usage: sqey [options] <path to the file> [options] <command> <one or more command arguments>
+    \\sqey - a simple key-value store backed by sqlite3
     \\
-    \\Available Commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, rename, stdin
+    \\Usage: sqey [options] <database> [options] <command> [args...]
     \\
-    \\Example: sqey mydb.db set key1 value1 key2 value2 && sqey mydb.db get key1 key2
+    \\Commands:
+    \\  set               Insert or update key-value pairs
+    \\  get               Retrieve values by key. Fails if any key is missing
+    \\  get-or-else       Retrieve value, or print a default if missing
+    \\  get-or-else-set   Like get-or-else, but also stores the default
+    \\  keys              List all keys
+    \\  key-values        List all keys and values (alternating)
+    \\  keys-like         List keys matching a SQL LIKE pattern
+    \\  delete            Delete keys. Fails if any key is missing
+    \\  delete-if-exists  Delete keys without error if missing
+    \\  rename            Rename keys (pairs of old/new names)
+    \\  stdin             Read arguments from stdin instead of CLI
     \\
-    \\Available Options:
-    \\-0: Output: use null terminator instead of new line when printing. Input: tokens are separated by null terminator instead of newline when using "stdin"
-    \\-b: Output: use binary format when printing. Input: use binary format when using "stdin". Binary format: instead of terminator, each token is preceded by a 32-bit unsigned little endian length
-    \\-s: Single entry input/output
-    \\-r: Reverse output order for some commands that print keys (keys, key-values, ...)
-    \\-n: Allow creating the database file if it does not exist
-    \\-o: Open the database in readonly mode. Write operations will fail
-    \\-h\--help: Print help
+    \\Options:
+    \\  -n                Create the database file if it does not exist
+    \\  -o                Open in readonly mode (write commands fail)
+    \\  -r                Reverse output order for keys, key-values, etc.
+    \\  -0                Use null (\\0) instead of newline as separator
+    \\  -b                Use binary format (4-byte unsigned little-endian length prefix per token)
+    \\  -s                Single entry mode: treat all input as one value
+    \\  -h/--help         Print help
     \\
 ;
 
