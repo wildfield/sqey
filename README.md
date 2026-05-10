@@ -12,18 +12,54 @@ This utility requires `sqlite3` c library to be installed on your machine
 
 ## Usage
 
-Usage: `sqey [options] <path to the file> [options] <command> <one or more command arguments>`
+```
+sqey [options] <database> [options] <command> [args...]
+```
 
-Available commands: `get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, rename, stdin`
+### Commands
 
-Example: `sqey mydb.db set key1 value1 key2 value2 && sqey mydb.db get key1 key2`
+| Command | Description | Example |
+|---|---|---|
+| `set` | Insert or update key-value pairs | `sqey example.db set name Alice age 30` |
+| `get` | Retrieve values by key. Fails if any key is missing | `sqey example.db get name age` |
+| `get-or-else` | Retrieve value, or print a default if missing | `sqey example.db get-or-else country N/A` |
+| `get-or-else-set` | Like `get-or-else`, but also stores the default | `sqey example.db get-or-else-set country UK` |
+| `keys` | List all keys | `sqey example.db keys` |
+| `key-values` | List all keys and values (alternating) | `sqey example.db key-values` |
+| `keys-like` | List keys matching a SQL LIKE pattern | `sqey example.db keys-like 'na%'` |
+| `delete` | Delete keys. Fails if any key is missing | `sqey example.db delete city` |
+| `delete-if-exists` | Delete keys without error if missing | `sqey example.db delete-if-exists missing_key` |
+| `rename` | Rename keys (pairs of old/new names) | `sqey example.db rename old_key new_key` |
+| `stdin` | Read arguments from stdin instead of CLI | `echo -e "k1\nv1" \| sqey example.db stdin set` |
 
-Available Options:
+### Options
 
--0: Output: use null terminator instead of new line when printing. Input: tokens are separated by null terminator instead of newline when using "stdin"
+| Option | Description |
+|---|---|
+| `-n` | Create the database file if it does not exist. `set` and `get-or-else-set` default to true |
+| `-o` | Open in readonly mode (write commands fail) |
+| `-r` | Reverse output order for `keys`, `key-values`, etc. |
+| `-0` | Use null (`\0`) instead of newline as separator (input and output) |
+| `-b` | Use binary format (unsigned 4-byte little-endian length prefix per token) for input/output |
+| `-s` | Single entry mode: treat all input as one value; output as a single value without separators |
+| `-h` / `--help` | Print help |
 
--b: Output: use binary format when printing. Input: use binary format when using "stdin". Binary format: instead of terminator, each token is preceded by a 32-bit unsigned little endian length
+### Examples
 
--r: Reverse output order for some commands that print keys (keys, key-values, ...)
+```bash
+# Store and retrieve values
+sqey example.db set name Alice age 30 city London
+sqey example.db get name age city
 
--h\\--help: Print help
+# Read key-value pairs from stdin
+echo -e "foo\nbar\nbaz\nqux" | sqey example.db stdin set
+sqey example.db keys  # foo, baz
+
+# Read-only access
+sqey example.db -o get name
+
+# Create DB on first use
+sqey new.db -n get-or-else-set k1 v1
+```
+
+Options can be combined: `sqey example.db -rn keys` (reverse, create-if-missing).
