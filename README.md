@@ -10,6 +10,8 @@ Supported Zig version is `0.16.0`
 
 This utility requires `sqlite3` c library to be installed on your machine
 
+Tested on Arch Linux and MacOS
+
 ## Usage
 
 ```
