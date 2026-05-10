@@ -18,6 +18,35 @@ Tested on Arch Linux and MacOS
 sqey [options] <database> [options] <command> [args...]
 ```
 
+### Examples
+
+```bash
+# Store and retrieve values
+sqey example1.db set name Alice age 30 city London
+sqey example1.db get name age city
+# Alice
+# 30
+# London
+
+# Read key-value pairs from stdin
+echo -e "foo\nbar\nbaz\nqux" | sqey example2.db stdin set
+sqey example2.db keys
+# foo
+# baz
+
+# Key-values in the reverse order of keys
+sqey example2.db -r key-values
+# baz
+# qux
+# foo
+# bar
+
+# Create DB on first use (`get-or-else` doesn't write the default value)
+sqey new.db -n get-or-else planet unknown
+# unknown
+sqey new.db keys
+```
+
 ### Commands
 
 | Command | Description | Example |
@@ -47,35 +76,6 @@ All commands that accept keys or key-value pairs can accept more than one in a s
 | `-b` | Use binary format (unsigned 4-byte little-endian length prefix per token) for input/output |
 | `-s` | Single entry mode: treat all input as one value; output as a single value without separators |
 | `-h` / `--help` | Print help |
-
-### Examples
-
-```bash
-# Store and retrieve values
-sqey example1.db set name Alice age 30 city London
-sqey example1.db get name age city
-# Alice
-# 30
-# London
-
-# Read key-value pairs from stdin
-echo -e "foo\nbar\nbaz\nqux" | sqey example2.db stdin set
-sqey example2.db keys
-# foo
-# baz
-
-# Key-values in the reverse order of keys
-sqey example2.db -r key-values
-# baz
-# qux
-# foo
-# bar
-
-# Create DB on first use (`get-or-else` doesn't write the default value)
-sqey new.db -n get-or-else planet unknown
-# unknown
-sqey new.db keys
-```
 
 Options can be combined: `sqey example.db -rn keys` (reverse, create-if-missing).
 
