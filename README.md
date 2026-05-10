@@ -32,6 +32,8 @@ sqey [options] <database> [options] <command> [args...]
 | `rename` | Rename keys (pairs of old/new names) | `sqey example.db rename old_key new_key` |
 | `stdin` | Read arguments from stdin instead of CLI | `echo -e "k1\nv1" \| sqey example.db stdin set` |
 
+All commands that accept keys or key-value pairs can accept more than one in a single invocation
+
 ### Options
 
 | Option | Description |
