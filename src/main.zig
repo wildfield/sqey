@@ -368,39 +368,10 @@ pub fn main(init: std.process.Init) !void {
                     defer state_manager.close();
 
                     if (options.is_input_stdin) {
-                        const stdin_buffer = try allocator.alloc(u8, 64 * 1024);
-                        defer allocator.free(stdin_buffer);
-
-                        var stdin_reader = std.Io.File.stdin().reader(init.io, stdin_buffer);
-                        const stdin = &stdin_reader.interface;
-
-                        var trailing_args_buffer = try std.ArrayList([]const u8).initCapacity(allocator, 8);
-                        defer {
-                            for (trailing_args_buffer.items) |item| {
-                                allocator.free(item);
-                            }
-                            trailing_args_buffer.deinit(allocator);
-                        }
-
-                        while (args.next()) |arg| {
-                            try trailing_args_buffer.append(allocator, try allocator.dupe(u8, arg));
-                        }
-
-                        var iterator = StdinIterator.init(
+                        try processStdinArgs(
                             allocator,
-                            stdin,
-                            trailing_args_buffer.items,
-                            .{
-                                .delimiter = options.delimiter,
-                                .is_binary_protocol = options.is_binary_protocol,
-                                .is_single_entry = options.is_single_entry,
-                            },
-                        );
-                        defer iterator.deinit();
-
-                        try processArgs(
-                            allocator,
-                            &iterator,
+                            &args,
+                            init,
                             command_str,
                             filepath,
                             &state_manager,
@@ -457,6 +428,57 @@ pub fn parseCommand(
         std.log.err("Unknown command. Possible commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, rename", .{});
         return CommandError.InvalidCommand;
     }
+}
+
+// Reads arguments from stdin using the configured delimiter and binary protocol
+// Prepends any trailing CLI arguments before reading arguments from stdin
+fn processStdinArgs(
+    allocator: std.mem.Allocator,
+    args: *std.process.Args.Iterator,
+    init: std.process.Init,
+    command_str: [:0]const u8,
+    filepath: [:0]const u8,
+    state_manager: *DatabaseStateManager,
+    options: Options,
+) !void {
+    const stdin_buffer = try allocator.alloc(u8, 64 * 1024);
+    defer allocator.free(stdin_buffer);
+
+    var stdin_reader = std.Io.File.stdin().reader(init.io, stdin_buffer);
+    const stdin = &stdin_reader.interface;
+
+    var trailing_args_buffer = try std.ArrayList([]const u8).initCapacity(allocator, 8);
+    defer {
+        for (trailing_args_buffer.items) |item| {
+            allocator.free(item);
+        }
+        trailing_args_buffer.deinit(allocator);
+    }
+
+    while (args.next()) |arg| {
+        try trailing_args_buffer.append(allocator, try allocator.dupe(u8, arg));
+    }
+
+    var iterator = StdinIterator.init(
+        allocator,
+        stdin,
+        trailing_args_buffer.items,
+        .{
+            .delimiter = options.delimiter,
+            .is_binary_protocol = options.is_binary_protocol,
+            .is_single_entry = options.is_single_entry,
+        },
+    );
+    defer iterator.deinit();
+
+    try processArgs(
+        allocator,
+        &iterator,
+        command_str,
+        filepath,
+        state_manager,
+        options,
+    );
 }
 
 pub fn processArgs(
