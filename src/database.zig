@@ -25,37 +25,9 @@ pub const DatabaseState = enum {
     Closed,
 };
 
-pub const TokenWriterError = error{SizeTooLarge};
-
-pub fn printTokenWriter(
-    writer: *std.Io.Writer,
-    delimiter: u8,
-    is_binary_format: bool,
-    is_single_entry: bool,
-    token: []const u8,
-) !void {
-    if (is_binary_format) {
-        if (std.math.cast(u32, token.len)) |len| {
-            _ = try writer.writeInt(u32, len, .little);
-        } else {
-            return TokenWriterError.SizeTooLarge;
-        }
-        _ = try writer.writeAll(token);
-    } else if (is_single_entry) {
-        _ = try writer.writeAll(token);
-    } else {
-        _ = try writer.writeAll(token);
-        _ = try writer.writeByte(delimiter);
-    }
-}
 
 pub const DatabaseStateManager = struct {
     current_state: DatabaseState = .Initial,
-    stdout: *std.Io.Writer,
-    delimiter: u8,
-    is_binary_protocol: bool,
-    is_single_entry: bool,
-    is_reverse_order_output: bool,
     is_readonly: bool,
     db: *c.sqlite3 = undefined,
 
@@ -110,16 +82,6 @@ pub const DatabaseStateManager = struct {
         self.current_state = .DatabaseOpen;
     }
 
-    pub fn printToken(self: DatabaseStateManager, token: []const u8) !void {
-        try printTokenWriter(
-            self.stdout,
-            self.delimiter,
-            self.is_binary_protocol,
-            self.is_single_entry,
-            token,
-        );
-    }
-
     pub fn close(self: *DatabaseStateManager) void {
         switch (self.current_state) {
             .Initial => {
@@ -128,8 +90,6 @@ pub const DatabaseStateManager = struct {
             .Closed => {},
             .DatabaseOpen => {
                 _ = c.sqlite3_close(self.db);
-                self.stdout.flush() catch {};
-
                 self.current_state = .Closed;
             },
         }

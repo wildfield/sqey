@@ -2,10 +2,12 @@ const std = @import("std");
 const c = @import("c");
 
 const database = @import("database.zig");
+const token_writer = @import("token_writer.zig");
 const utils = @import("utils.zig");
 
 const DbError = database.DbError;
-pub const DatabaseStateManager = database.DatabaseStateManager;
+const DatabaseStateManager = database.DatabaseStateManager;
+const TokenWriter = token_writer.TokenWriter;
 
 const KeyValuePair = utils.KeyValuePair;
 const Options = utils.Options;
@@ -138,7 +140,7 @@ pub const Transaction = struct {
 pub const GetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
 
-    fn processStep(self: *GetHandler, sm: *DatabaseStateManager, key: []const u8) !void {
+    fn processStep(self: *GetHandler, sm: *DatabaseStateManager, writer: *TokenWriter, key: []const u8) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
         }
@@ -153,7 +155,7 @@ pub const GetHandler = struct {
 
         const result_code = c.sqlite3_step(self.statement.?);
         if (result_code == c.SQLITE_ROW) {
-            try sm.printToken(try getColumnBlob(self.statement.?, 0));
+            try writer.printToken(try getColumnBlob(self.statement.?, 0));
         } else if (result_code == c.SQLITE_DONE) {
             std.log.err("No value found for key \"{s}\"", .{key});
             return DbError.FailedToGetKey;
@@ -176,6 +178,7 @@ pub const GetHandler = struct {
         args: anytype,
         filepath: [:0]const u8,
         sm: *DatabaseStateManager,
+        writer: *TokenWriter,
         options: Options,
     ) !void {
         var key_buffer = std.Io.Writer.Allocating.init(allocator);
@@ -193,7 +196,7 @@ pub const GetHandler = struct {
                 return singleEntryFail();
             }
 
-            try self.processStep(sm, key);
+            try self.processStep(sm, writer, key);
         }
         if (!did_receive_valid_arg) {
             std.log.err("Missing at least one key for get command", .{});
@@ -206,7 +209,7 @@ pub const GetHandler = struct {
 pub const GetOrElseHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
 
-    fn processStep(self: *GetOrElseHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
+    fn processStep(self: *GetOrElseHandler, sm: *DatabaseStateManager, writer: *TokenWriter, pair: KeyValuePair) !void {
         if (self.statement == null) {
             self.statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
         }
@@ -221,9 +224,9 @@ pub const GetOrElseHandler = struct {
 
         const result_code = c.sqlite3_step(self.statement.?);
         if (result_code == c.SQLITE_ROW) {
-            try sm.printToken(try getColumnBlob(self.statement.?, 0));
+            try writer.printToken(try getColumnBlob(self.statement.?, 0));
         } else if (result_code == c.SQLITE_DONE) {
-            try sm.printToken(pair.value);
+            try writer.printToken(pair.value);
         } else {
             std.log.err("Failed to read row: {s}", .{c.sqlite3_errmsg(sm.db)});
             return DbError.FailedToExecuteQuery;
@@ -243,6 +246,7 @@ pub const GetOrElseHandler = struct {
         args: anytype,
         filepath: [:0]const u8,
         sm: *DatabaseStateManager,
+        writer: *TokenWriter,
         options: Options,
     ) !void {
         var key_buffer = std.Io.Writer.Allocating.init(allocator);
@@ -265,7 +269,7 @@ pub const GetOrElseHandler = struct {
                 return singleEntryFail();
             }
 
-            try self.processStep(sm, .{ .key = key, .value = value });
+            try self.processStep(sm, writer, .{ .key = key, .value = value });
         }
         if (!did_receive_valid_arg) {
             std.log.err("Missing at least one key value pair for get-or-else command", .{});
@@ -280,7 +284,7 @@ pub const GetOrElseSetHandler = struct {
     insert_statement: ?*c.sqlite3_stmt = null,
     tx: Transaction = .{},
 
-    fn processStep(self: *GetOrElseSetHandler, sm: *DatabaseStateManager, pair: KeyValuePair) !void {
+    fn processStep(self: *GetOrElseSetHandler, sm: *DatabaseStateManager, writer: *TokenWriter, pair: KeyValuePair) !void {
         if (self.get_statement == null) {
             self.get_statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
             // We update the id on conflict to reorder the elements when using key-based operations
@@ -310,9 +314,9 @@ pub const GetOrElseSetHandler = struct {
 
         const result_code = c.sqlite3_step(self.get_statement.?);
         if (result_code == c.SQLITE_ROW) {
-            try sm.printToken(try getColumnBlob(self.get_statement.?, 0));
+            try writer.printToken(try getColumnBlob(self.get_statement.?, 0));
         } else if (result_code == c.SQLITE_DONE) {
-            try sm.printToken(pair.value);
+            try writer.printToken(pair.value);
 
             try bindText(sm.db, self.insert_statement.?, 1, pair.key);
             try bindBlob(sm.db, self.insert_statement.?, 2, pair.value);
@@ -344,6 +348,7 @@ pub const GetOrElseSetHandler = struct {
         args: anytype,
         filepath: [:0]const u8,
         sm: *DatabaseStateManager,
+        writer: *TokenWriter,
         options: Options,
     ) !void {
         var key_buffer = std.Io.Writer.Allocating.init(allocator);
@@ -374,7 +379,7 @@ pub const GetOrElseSetHandler = struct {
             }
 
             try self.tx.begin(sm);
-            try self.processStep(sm, .{ .key = key, .value = value });
+            try self.processStep(sm, writer, .{ .key = key, .value = value });
         }
 
         if (!did_receive_valid_arg) {
@@ -470,8 +475,8 @@ pub const SetHandler = struct {
 /// List all keys in the database.
 pub const KeysHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
-    pub fn run(sm: *DatabaseStateManager) !void {
-        const order = if (!sm.is_reverse_order_output) "ASC" else "DESC";
+    pub fn run(sm: *DatabaseStateManager, writer: *TokenWriter) !void {
+        const order = if (!writer.is_reverse_order_output) "ASC" else "DESC";
 
         const statement_str_pattern = "SELECT key FROM data ORDER BY id {s}";
         var statement_str_buf: [statement_str_pattern.len + 1]u8 = undefined;
@@ -482,7 +487,7 @@ pub const KeysHandler = struct {
 
         var result_code = c.sqlite3_step(statement);
         while (result_code == c.SQLITE_ROW) {
-            try sm.printToken(std.mem.sliceTo(c.sqlite3_column_text(statement, 0), 0));
+            try writer.printToken(std.mem.sliceTo(c.sqlite3_column_text(statement, 0), 0));
             result_code = c.sqlite3_step(statement);
         }
 
@@ -496,8 +501,8 @@ pub const KeysHandler = struct {
 /// List all keys and values in alternating order.
 pub const KeyValuesHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
-    pub fn run(sm: *DatabaseStateManager) !void {
-        const is_reverse = sm.is_reverse_order_output;
+    pub fn run(sm: *DatabaseStateManager, writer: *TokenWriter) !void {
+        const is_reverse = writer.is_reverse_order_output;
         const order: []const u8 = if (!is_reverse) "ASC" else "DESC";
 
         const statement_str_pattern = "SELECT key, value FROM data ORDER BY id {s}";
@@ -510,9 +515,9 @@ pub const KeyValuesHandler = struct {
         var result_code = c.sqlite3_step(statement);
         while (result_code == c.SQLITE_ROW) {
             const text = std.mem.sliceTo(c.sqlite3_column_text(statement, 0), 0);
-            try sm.printToken(text);
+            try writer.printToken(text);
             const blob = try getColumnBlob(statement, 1);
-            try sm.printToken(blob);
+            try writer.printToken(blob);
             result_code = c.sqlite3_step(statement);
         }
 
@@ -526,8 +531,8 @@ pub const KeyValuesHandler = struct {
 /// List keys matching a SQL LIKE pattern.
 pub const KeysLikeHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
-    pub fn run(sm: *DatabaseStateManager, pattern: []const u8) !void {
-        const is_reverse = sm.is_reverse_order_output;
+    pub fn run(sm: *DatabaseStateManager, writer: *TokenWriter, pattern: []const u8) !void {
+        const is_reverse = writer.is_reverse_order_output;
         const order: []const u8 = if (!is_reverse) "ASC" else "DESC";
 
         const statement_str_pattern = "SELECT key FROM data WHERE key LIKE ? ORDER BY id {s}";
@@ -541,7 +546,7 @@ pub const KeysLikeHandler = struct {
 
         var result_code = c.sqlite3_step(statement);
         while (result_code == c.SQLITE_ROW) {
-            try sm.printToken(std.mem.sliceTo(c.sqlite3_column_text(statement, 0), 0));
+            try writer.printToken(std.mem.sliceTo(c.sqlite3_column_text(statement, 0), 0));
             result_code = c.sqlite3_step(statement);
         }
 

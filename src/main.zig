@@ -2,9 +2,11 @@ const std = @import("std");
 
 const database = @import("database.zig");
 const handlers = @import("handlers.zig");
+const token_writer = @import("token_writer.zig");
 const utils = @import("utils.zig");
 
 const DatabaseStateManager = database.DatabaseStateManager;
+const TokenWriter = token_writer.TokenWriter;
 
 const Options = utils.Options;
 const ProcessArgsError = utils.ProcessArgsError;
@@ -349,20 +351,19 @@ pub fn main(init: std.process.Init) !void {
                     const command_str = command_result.arg;
                     options = command_result.options;
 
-                    var allocator = std.heap.smp_allocator;
+                    const allocator = std.heap.smp_allocator;
 
-                    const stdout_buffer = try allocator.alloc(u8, 64 * 1024);
-                    defer allocator.free(stdout_buffer);
-
-                    var stdout_writer = std.Io.File.stdout().writer(init.io, stdout_buffer);
-                    const stdout = &stdout_writer.interface;
+                    var writer: TokenWriter = try TokenWriter.init(
+                        allocator,
+                        init.io,
+                        options.delimiter,
+                        options.is_binary_protocol,
+                        options.is_single_entry,
+                        options.is_reverse_order_output,
+                    );
+                    defer writer.deinit(allocator);
 
                     var state_manager: DatabaseStateManager = .{
-                        .stdout = stdout,
-                        .delimiter = options.delimiter,
-                        .is_binary_protocol = options.is_binary_protocol,
-                        .is_single_entry = options.is_single_entry,
-                        .is_reverse_order_output = options.is_reverse_order_output,
                         .is_readonly = options.is_readonly,
                     };
                     defer state_manager.close();
@@ -375,6 +376,7 @@ pub fn main(init: std.process.Init) !void {
                             command_str,
                             filepath,
                             &state_manager,
+                            &writer,
                             options,
                         );
                     } else {
@@ -388,6 +390,7 @@ pub fn main(init: std.process.Init) !void {
                             command_str,
                             filepath,
                             &state_manager,
+                            &writer,
                             options,
                         );
                     }
@@ -439,6 +442,7 @@ fn processStdinArgs(
     command_str: [:0]const u8,
     filepath: [:0]const u8,
     state_manager: *DatabaseStateManager,
+    writer: *TokenWriter,
     options: Options,
 ) !void {
     const stdin_buffer = try allocator.alloc(u8, 64 * 1024);
@@ -477,6 +481,7 @@ fn processStdinArgs(
         command_str,
         filepath,
         state_manager,
+        writer,
         options,
     );
 }
@@ -487,6 +492,7 @@ pub fn processArgs(
     command_str: [:0]const u8,
     filepath: [:0]const u8,
     database_manager: *DatabaseStateManager,
+    writer: *TokenWriter,
     options: Options,
 ) !void {
     const command = try parseCommand(command_str);
@@ -494,15 +500,15 @@ pub fn processArgs(
     switch (command) {
         .Get => {
             var handler: GetHandler = .{};
-            try handler.run(allocator, args, filepath, database_manager, options);
+            try handler.run(allocator, args, filepath, database_manager, writer, options);
         },
         .GetOrElse => {
             var handler: GetOrElseHandler = .{};
-            try handler.run(allocator, args, filepath, database_manager, options);
+            try handler.run(allocator, args, filepath, database_manager, writer, options);
         },
         .GetOrElseSet => {
             var handler: GetOrElseSetHandler = .{};
-            try handler.run(allocator, args, filepath, database_manager, options);
+            try handler.run(allocator, args, filepath, database_manager, writer, options);
         },
         .Set => {
             var handler: SetHandler = .{};
@@ -520,7 +526,7 @@ pub fn processArgs(
             }
 
             try database_manager.open(filepath, options.allow_create);
-            try KeysHandler.run(database_manager);
+            try KeysHandler.run(database_manager, writer);
         },
         .KeyValues => {
             if (options.is_single_entry) {
@@ -534,7 +540,7 @@ pub fn processArgs(
             }
 
             try database_manager.open(filepath, options.allow_create);
-            try KeyValuesHandler.run(database_manager);
+            try KeyValuesHandler.run(database_manager, writer);
         },
         .KeysLike => {
             if (options.is_single_entry) {
@@ -553,7 +559,7 @@ pub fn processArgs(
             }
 
             try database_manager.open(filepath, options.allow_create);
-            try KeysLikeHandler.run(database_manager, pattern);
+            try KeysLikeHandler.run(database_manager, writer, pattern);
         },
         .Delete => {
             var handler: DeleteHandler = .{};
