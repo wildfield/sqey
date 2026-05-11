@@ -2,11 +2,12 @@ const std = @import("std");
 const c = @import("c");
 
 const database = @import("database.zig");
+const token_writer = @import("token_writer.zig");
 const utils = @import("utils.zig");
 
 const DbError = database.DbError;
 pub const DatabaseStateManager = database.DatabaseStateManager;
-const TokenWriter = database.TokenWriter;
+const TokenWriter = token_writer.TokenWriter;
 
 const KeyValuePair = utils.KeyValuePair;
 const Options = utils.Options;
