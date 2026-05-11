@@ -354,7 +354,7 @@ pub fn main(init: std.process.Init) !void {
                     const stdout_buffer = try allocator.alloc(u8, 64 * 1024);
                     defer allocator.free(stdout_buffer);
 
-                    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+                    var stdout_writer = std.Io.File.stdout().writer(init.io, stdout_buffer);
                     const stdout = &stdout_writer.interface;
 
                     var state_manager: DatabaseStateManager = .{
