@@ -5,7 +5,7 @@ const handlers = @import("handlers.zig");
 const utils = @import("utils.zig");
 
 const DatabaseStateManager = database.DatabaseStateManager;
-const TokenPrinter = database.TokenPrinter;
+const TokenWriter = database.TokenWriter;
 
 const Options = utils.Options;
 const ProcessArgsError = utils.ProcessArgsError;
@@ -358,16 +358,16 @@ pub fn main(init: std.process.Init) !void {
                     var stdout_writer = std.Io.File.stdout().writer(init.io, stdout_buffer);
                     const stdout = &stdout_writer.interface;
 
-                    var printer: TokenPrinter = .{
+                    var printer: TokenWriter = .{
                         .stdout = stdout,
                         .delimiter = options.delimiter,
                         .is_binary_protocol = options.is_binary_protocol,
                         .is_single_entry = options.is_single_entry,
                         .is_reverse_order_output = options.is_reverse_order_output,
                     };
+                    defer printer.close();
 
                     var state_manager: DatabaseStateManager = .{
-                        .printer = &printer,
                         .is_readonly = options.is_readonly,
                     };
                     defer state_manager.close();
@@ -380,6 +380,7 @@ pub fn main(init: std.process.Init) !void {
                             command_str,
                             filepath,
                             &state_manager,
+                            &printer,
                             options,
                         );
                     } else {
@@ -393,6 +394,7 @@ pub fn main(init: std.process.Init) !void {
                             command_str,
                             filepath,
                             &state_manager,
+                            &printer,
                             options,
                         );
                     }
@@ -444,6 +446,7 @@ fn processStdinArgs(
     command_str: [:0]const u8,
     filepath: [:0]const u8,
     state_manager: *DatabaseStateManager,
+    printer: *TokenWriter,
     options: Options,
 ) !void {
     const stdin_buffer = try allocator.alloc(u8, 64 * 1024);
@@ -482,6 +485,7 @@ fn processStdinArgs(
         command_str,
         filepath,
         state_manager,
+        printer,
         options,
     );
 }
@@ -492,6 +496,7 @@ pub fn processArgs(
     command_str: [:0]const u8,
     filepath: [:0]const u8,
     database_manager: *DatabaseStateManager,
+    printer: *TokenWriter,
     options: Options,
 ) !void {
     const command = try parseCommand(command_str);
@@ -499,15 +504,15 @@ pub fn processArgs(
     switch (command) {
         .Get => {
             var handler: GetHandler = .{};
-            try handler.run(allocator, args, filepath, database_manager, options);
+            try handler.run(allocator, args, filepath, database_manager, printer, options);
         },
         .GetOrElse => {
             var handler: GetOrElseHandler = .{};
-            try handler.run(allocator, args, filepath, database_manager, options);
+            try handler.run(allocator, args, filepath, database_manager, printer, options);
         },
         .GetOrElseSet => {
             var handler: GetOrElseSetHandler = .{};
-            try handler.run(allocator, args, filepath, database_manager, options);
+            try handler.run(allocator, args, filepath, database_manager, printer, options);
         },
         .Set => {
             var handler: SetHandler = .{};
@@ -525,7 +530,7 @@ pub fn processArgs(
             }
 
             try database_manager.open(filepath, options.allow_create);
-            try KeysHandler.run(database_manager);
+            try KeysHandler.run(database_manager, printer);
         },
         .KeyValues => {
             if (options.is_single_entry) {
@@ -539,7 +544,7 @@ pub fn processArgs(
             }
 
             try database_manager.open(filepath, options.allow_create);
-            try KeyValuesHandler.run(database_manager);
+            try KeyValuesHandler.run(database_manager, printer);
         },
         .KeysLike => {
             if (options.is_single_entry) {
@@ -558,7 +563,7 @@ pub fn processArgs(
             }
 
             try database_manager.open(filepath, options.allow_create);
-            try KeysLikeHandler.run(database_manager, pattern);
+            try KeysLikeHandler.run(database_manager, printer, pattern);
         },
         .Delete => {
             var handler: DeleteHandler = .{};

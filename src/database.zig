@@ -49,14 +49,14 @@ pub fn printTokenWriter(
     }
 }
 
-pub const TokenPrinter = struct {
+pub const TokenWriter = struct {
     stdout: *std.Io.Writer,
     delimiter: u8,
     is_binary_protocol: bool,
     is_single_entry: bool,
     is_reverse_order_output: bool,
 
-    pub fn printToken(self: TokenPrinter, token: []const u8) !void {
+    pub fn printToken(self: TokenWriter, token: []const u8) !void {
         try printTokenWriter(
             self.stdout,
             self.delimiter,
@@ -66,14 +66,13 @@ pub const TokenPrinter = struct {
         );
     }
 
-    pub fn close(self: TokenPrinter) void {
+    pub fn close(self: TokenWriter) void {
         self.stdout.flush() catch {};
     }
 };
 
 pub const DatabaseStateManager = struct {
     current_state: DatabaseState = .Initial,
-    printer: *TokenPrinter,
     is_readonly: bool,
     db: *c.sqlite3 = undefined,
 
@@ -136,7 +135,6 @@ pub const DatabaseStateManager = struct {
             .Closed => {},
             .DatabaseOpen => {
                 _ = c.sqlite3_close(self.db);
-                self.printer.close();
                 self.current_state = .Closed;
             },
         }
