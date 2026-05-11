@@ -74,7 +74,7 @@ All commands that accept keys or key-value pairs can accept more than one in a s
 | `-0` | Use null (`\0`) instead of newline as separator (input and output) |
 | `-b` | Use binary format (unsigned 4-byte little-endian length prefix per token) for input/output |
 | `-s` | Single entry mode: treat all input as one value; output as a single value without separators |
-| `-i` | Read command arguments from stdin instead of CLI |
+| `-i` | Read commands and arguments from stdin instead of CLI. You can pass leading arguments after `-i` |
 | `-h` / `--help` | Print help |
 
 Options can be combined: `sqey example.db -rn keys` (reverse, create-if-missing).
