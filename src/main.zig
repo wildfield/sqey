@@ -198,7 +198,7 @@ const help =
     \\  -o                Open in readonly mode (write commands fail)
     \\  -r                Reverse output order for keys, key-values, etc.
     \\  -0                Use null (\\0) instead of newline as separator
-    \\  -b                Use binary format (4-byte unsigned little-endian length prefix per token)
+    \\  -b                Use binary format (32-bit unsigned little-endian length prefix per token)
     \\  -s                Single entry mode: treat all input as one value
     \\  -i                Read commands and arguments from stdin. You can pass leading arguments after -i
     \\  -h/--help         Print help
