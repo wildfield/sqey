@@ -2,18 +2,6 @@
 
 A simple command-line utility for key-value storage based on an sqlite3 db
 
-## Building
-
-Supported Zig version is `0.16.0`
-
-`zig build` in the project folder for debug build
-
-`zig build --release=small` for the release build
-
-This utility requires `sqlite3` c library to be installed on your machine
-
-Tested on Arch Linux and MacOS
-
 ## Usage
 
 ```
@@ -48,6 +36,18 @@ sqey new.db -n get-or-else planet unknown
 # unknown
 sqey new.db keys
 ```
+
+### Building
+
+Supported Zig version is `0.16.0`
+
+`zig build` in the project folder for debug build
+
+`zig build --release=small` for the release build
+
+This utility requires `sqlite3` c library to be installed on your machine
+
+Tested on Arch Linux and MacOS
 
 ### Commands
 
