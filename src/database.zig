@@ -50,24 +50,47 @@ pub fn printTokenWriter(
 }
 
 pub const TokenWriter = struct {
-    stdout: *std.Io.Writer,
+    stdout_buffer: []u8,
+    stdout_writer: std.Io.File.Writer,
     delimiter: u8,
     is_binary_protocol: bool,
     is_single_entry: bool,
     is_reverse_order_output: bool,
 
-    pub fn printToken(self: TokenWriter, token: []const u8) !void {
+    pub fn init(
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        delimiter: u8,
+        is_binary_protocol: bool,
+        is_single_entry: bool,
+        is_reverse_order_output: bool,
+    ) !TokenWriter {
+        const stdout_buffer = try allocator.alloc(u8, 64 * 1024);
+        const stdout_writer = std.Io.File.stdout().writer(io, stdout_buffer);
+
+        return .{
+            .stdout_buffer = stdout_buffer,
+            .stdout_writer = stdout_writer,
+            .delimiter = delimiter,
+            .is_binary_protocol = is_binary_protocol,
+            .is_single_entry = is_single_entry,
+            .is_reverse_order_output = is_reverse_order_output,
+        };
+    }
+
+    pub fn deinit(self: *TokenWriter, allocator: std.mem.Allocator) void {
+        self.stdout_writer.interface.flush() catch {};
+        allocator.free(self.stdout_buffer);
+    }
+
+    pub fn printToken(self: *TokenWriter, token: []const u8) !void {
         try printTokenWriter(
-            self.stdout,
+            &self.stdout_writer.interface,
             self.delimiter,
             self.is_binary_protocol,
             self.is_single_entry,
             token,
         );
-    }
-
-    pub fn close(self: TokenWriter) void {
-        self.stdout.flush() catch {};
     }
 };
 

@@ -350,22 +350,17 @@ pub fn main(init: std.process.Init) !void {
                     const command_str = command_result.arg;
                     options = command_result.options;
 
-                    var allocator = std.heap.smp_allocator;
+                    const allocator = std.heap.smp_allocator;
 
-                    const stdout_buffer = try allocator.alloc(u8, 64 * 1024);
-                    defer allocator.free(stdout_buffer);
-
-                    var stdout_writer = std.Io.File.stdout().writer(init.io, stdout_buffer);
-                    const stdout = &stdout_writer.interface;
-
-                    var printer: TokenWriter = .{
-                        .stdout = stdout,
-                        .delimiter = options.delimiter,
-                        .is_binary_protocol = options.is_binary_protocol,
-                        .is_single_entry = options.is_single_entry,
-                        .is_reverse_order_output = options.is_reverse_order_output,
-                    };
-                    defer printer.close();
+                    var printer: TokenWriter = try TokenWriter.init(
+                        allocator,
+                        init.io,
+                        options.delimiter,
+                        options.is_binary_protocol,
+                        options.is_single_entry,
+                        options.is_reverse_order_output,
+                    );
+                    defer printer.deinit(allocator);
 
                     var state_manager: DatabaseStateManager = .{
                         .is_readonly = options.is_readonly,
