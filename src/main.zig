@@ -353,7 +353,7 @@ pub fn main(init: std.process.Init) !void {
 
                     const allocator = std.heap.smp_allocator;
 
-                    var printer: TokenWriter = try TokenWriter.init(
+                    var writer: TokenWriter = try TokenWriter.init(
                         allocator,
                         init.io,
                         options.delimiter,
@@ -361,7 +361,7 @@ pub fn main(init: std.process.Init) !void {
                         options.is_single_entry,
                         options.is_reverse_order_output,
                     );
-                    defer printer.deinit(allocator);
+                    defer writer.deinit(allocator);
 
                     var state_manager: DatabaseStateManager = .{
                         .is_readonly = options.is_readonly,
@@ -376,7 +376,7 @@ pub fn main(init: std.process.Init) !void {
                             command_str,
                             filepath,
                             &state_manager,
-                            &printer,
+                            &writer,
                             options,
                         );
                     } else {
@@ -390,7 +390,7 @@ pub fn main(init: std.process.Init) !void {
                             command_str,
                             filepath,
                             &state_manager,
-                            &printer,
+                            &writer,
                             options,
                         );
                     }
@@ -442,7 +442,7 @@ fn processStdinArgs(
     command_str: [:0]const u8,
     filepath: [:0]const u8,
     state_manager: *DatabaseStateManager,
-    printer: *TokenWriter,
+    writer: *TokenWriter,
     options: Options,
 ) !void {
     const stdin_buffer = try allocator.alloc(u8, 64 * 1024);
@@ -481,7 +481,7 @@ fn processStdinArgs(
         command_str,
         filepath,
         state_manager,
-        printer,
+        writer,
         options,
     );
 }
@@ -492,7 +492,7 @@ pub fn processArgs(
     command_str: [:0]const u8,
     filepath: [:0]const u8,
     database_manager: *DatabaseStateManager,
-    printer: *TokenWriter,
+    writer: *TokenWriter,
     options: Options,
 ) !void {
     const command = try parseCommand(command_str);
@@ -500,15 +500,15 @@ pub fn processArgs(
     switch (command) {
         .Get => {
             var handler: GetHandler = .{};
-            try handler.run(allocator, args, filepath, database_manager, printer, options);
+            try handler.run(allocator, args, filepath, database_manager, writer, options);
         },
         .GetOrElse => {
             var handler: GetOrElseHandler = .{};
-            try handler.run(allocator, args, filepath, database_manager, printer, options);
+            try handler.run(allocator, args, filepath, database_manager, writer, options);
         },
         .GetOrElseSet => {
             var handler: GetOrElseSetHandler = .{};
-            try handler.run(allocator, args, filepath, database_manager, printer, options);
+            try handler.run(allocator, args, filepath, database_manager, writer, options);
         },
         .Set => {
             var handler: SetHandler = .{};
@@ -526,7 +526,7 @@ pub fn processArgs(
             }
 
             try database_manager.open(filepath, options.allow_create);
-            try KeysHandler.run(database_manager, printer);
+            try KeysHandler.run(database_manager, writer);
         },
         .KeyValues => {
             if (options.is_single_entry) {
@@ -540,7 +540,7 @@ pub fn processArgs(
             }
 
             try database_manager.open(filepath, options.allow_create);
-            try KeyValuesHandler.run(database_manager, printer);
+            try KeyValuesHandler.run(database_manager, writer);
         },
         .KeysLike => {
             if (options.is_single_entry) {
@@ -559,7 +559,7 @@ pub fn processArgs(
             }
 
             try database_manager.open(filepath, options.allow_create);
-            try KeysLikeHandler.run(database_manager, printer, pattern);
+            try KeysLikeHandler.run(database_manager, writer, pattern);
         },
         .Delete => {
             var handler: DeleteHandler = .{};
