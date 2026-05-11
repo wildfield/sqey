@@ -5,6 +5,7 @@ const handlers = @import("handlers.zig");
 const utils = @import("utils.zig");
 
 const DatabaseStateManager = database.DatabaseStateManager;
+const TokenPrinter = database.TokenPrinter;
 
 const Options = utils.Options;
 const ProcessArgsError = utils.ProcessArgsError;
@@ -357,12 +358,16 @@ pub fn main(init: std.process.Init) !void {
                     var stdout_writer = std.Io.File.stdout().writer(init.io, stdout_buffer);
                     const stdout = &stdout_writer.interface;
 
-                    var state_manager: DatabaseStateManager = .{
+                    var printer: TokenPrinter = .{
                         .stdout = stdout,
                         .delimiter = options.delimiter,
                         .is_binary_protocol = options.is_binary_protocol,
                         .is_single_entry = options.is_single_entry,
                         .is_reverse_order_output = options.is_reverse_order_output,
+                    };
+
+                    var state_manager: DatabaseStateManager = .{
+                        .printer = &printer,
                         .is_readonly = options.is_readonly,
                     };
                     defer state_manager.close();

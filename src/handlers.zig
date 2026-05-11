@@ -153,7 +153,7 @@ pub const GetHandler = struct {
 
         const result_code = c.sqlite3_step(self.statement.?);
         if (result_code == c.SQLITE_ROW) {
-            try sm.printToken(try getColumnBlob(self.statement.?, 0));
+            try sm.printer.printToken(try getColumnBlob(self.statement.?, 0));
         } else if (result_code == c.SQLITE_DONE) {
             std.log.err("No value found for key \"{s}\"", .{key});
             return DbError.FailedToGetKey;
@@ -221,9 +221,9 @@ pub const GetOrElseHandler = struct {
 
         const result_code = c.sqlite3_step(self.statement.?);
         if (result_code == c.SQLITE_ROW) {
-            try sm.printToken(try getColumnBlob(self.statement.?, 0));
+            try sm.printer.printToken(try getColumnBlob(self.statement.?, 0));
         } else if (result_code == c.SQLITE_DONE) {
-            try sm.printToken(pair.value);
+            try sm.printer.printToken(pair.value);
         } else {
             std.log.err("Failed to read row: {s}", .{c.sqlite3_errmsg(sm.db)});
             return DbError.FailedToExecuteQuery;
@@ -310,9 +310,9 @@ pub const GetOrElseSetHandler = struct {
 
         const result_code = c.sqlite3_step(self.get_statement.?);
         if (result_code == c.SQLITE_ROW) {
-            try sm.printToken(try getColumnBlob(self.get_statement.?, 0));
+            try sm.printer.printToken(try getColumnBlob(self.get_statement.?, 0));
         } else if (result_code == c.SQLITE_DONE) {
-            try sm.printToken(pair.value);
+            try sm.printer.printToken(pair.value);
 
             try bindText(sm.db, self.insert_statement.?, 1, pair.key);
             try bindBlob(sm.db, self.insert_statement.?, 2, pair.value);
@@ -471,7 +471,7 @@ pub const SetHandler = struct {
 pub const KeysHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager) !void {
-        const order = if (!sm.is_reverse_order_output) "ASC" else "DESC";
+        const order = if (!sm.printer.is_reverse_order_output) "ASC" else "DESC";
 
         const statement_str_pattern = "SELECT key FROM data ORDER BY id {s}";
         var statement_str_buf: [statement_str_pattern.len + 1]u8 = undefined;
@@ -482,7 +482,7 @@ pub const KeysHandler = struct {
 
         var result_code = c.sqlite3_step(statement);
         while (result_code == c.SQLITE_ROW) {
-            try sm.printToken(std.mem.sliceTo(c.sqlite3_column_text(statement, 0), 0));
+            try sm.printer.printToken(std.mem.sliceTo(c.sqlite3_column_text(statement, 0), 0));
             result_code = c.sqlite3_step(statement);
         }
 
@@ -497,7 +497,7 @@ pub const KeysHandler = struct {
 pub const KeyValuesHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager) !void {
-        const is_reverse = sm.is_reverse_order_output;
+        const is_reverse = sm.printer.is_reverse_order_output;
         const order: []const u8 = if (!is_reverse) "ASC" else "DESC";
 
         const statement_str_pattern = "SELECT key, value FROM data ORDER BY id {s}";
@@ -510,9 +510,9 @@ pub const KeyValuesHandler = struct {
         var result_code = c.sqlite3_step(statement);
         while (result_code == c.SQLITE_ROW) {
             const text = std.mem.sliceTo(c.sqlite3_column_text(statement, 0), 0);
-            try sm.printToken(text);
+            try sm.printer.printToken(text);
             const blob = try getColumnBlob(statement, 1);
-            try sm.printToken(blob);
+            try sm.printer.printToken(blob);
             result_code = c.sqlite3_step(statement);
         }
 
@@ -527,7 +527,7 @@ pub const KeyValuesHandler = struct {
 pub const KeysLikeHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager, pattern: []const u8) !void {
-        const is_reverse = sm.is_reverse_order_output;
+        const is_reverse = sm.printer.is_reverse_order_output;
         const order: []const u8 = if (!is_reverse) "ASC" else "DESC";
 
         const statement_str_pattern = "SELECT key FROM data WHERE key LIKE ? ORDER BY id {s}";
@@ -541,7 +541,7 @@ pub const KeysLikeHandler = struct {
 
         var result_code = c.sqlite3_step(statement);
         while (result_code == c.SQLITE_ROW) {
-            try sm.printToken(std.mem.sliceTo(c.sqlite3_column_text(statement, 0), 0));
+            try sm.printer.printToken(std.mem.sliceTo(c.sqlite3_column_text(statement, 0), 0));
             result_code = c.sqlite3_step(statement);
         }
 
