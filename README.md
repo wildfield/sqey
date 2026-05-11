@@ -6,7 +6,9 @@ A simple command-line utility for key-value storage based on an sqlite3 db
 
 Supported Zig version is `0.16.0`
 
-`zig build` in the project folder
+`zig build` in the project folder for debug build
+
+`zig build --release=small` for the release build
 
 This utility requires `sqlite3` c library to be installed on your machine
 
