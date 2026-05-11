@@ -1,3 +1,4 @@
+const utils = @import("utils.zig");
 const std = @import("std");
 
 pub const Error = error{SizeTooLarge};
@@ -24,21 +25,33 @@ pub fn writeTokenToWriter(
     }
 }
 
-pub const TokenWriter = struct {
-    stdout_buffer: []u8,
-    stdout_writer: std.Io.File.Writer,
+/// Configuration for how tokens are written to stdout.
+pub const TokenWriterOptions = struct {
     delimiter: u8,
     is_binary_protocol: bool,
     is_single_entry: bool,
     is_reverse_order_output: bool,
 
+    pub fn fromArgOptions(options: utils.Options) TokenWriterOptions {
+        return .{
+            .delimiter = options.delimiter,
+            .is_binary_protocol = options.is_binary_protocol,
+            .is_single_entry = options.is_single_entry,
+            .is_reverse_order_output = options.is_reverse_order_output,
+        };
+    }
+};
+
+/// Buffered writer that outputs tokens to stdout.
+pub const TokenWriter = struct {
+    stdout_buffer: []u8,
+    stdout_writer: std.Io.File.Writer,
+    options: TokenWriterOptions,
+
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
-        delimiter: u8,
-        is_binary_protocol: bool,
-        is_single_entry: bool,
-        is_reverse_order_output: bool,
+        options: TokenWriterOptions,
     ) !TokenWriter {
         const stdout_buffer = try allocator.alloc(u8, 64 * 1024);
         const stdout_writer = std.Io.File.stdout().writer(io, stdout_buffer);
@@ -46,10 +59,7 @@ pub const TokenWriter = struct {
         return .{
             .stdout_buffer = stdout_buffer,
             .stdout_writer = stdout_writer,
-            .delimiter = delimiter,
-            .is_binary_protocol = is_binary_protocol,
-            .is_single_entry = is_single_entry,
-            .is_reverse_order_output = is_reverse_order_output,
+            .options = options,
         };
     }
 
@@ -61,9 +71,9 @@ pub const TokenWriter = struct {
     pub fn printToken(self: *TokenWriter, token: []const u8) !void {
         try writeTokenToWriter(
             &self.stdout_writer.interface,
-            self.delimiter,
-            self.is_binary_protocol,
-            self.is_single_entry,
+            self.options.delimiter,
+            self.options.is_binary_protocol,
+            self.options.is_single_entry,
             token,
         );
     }

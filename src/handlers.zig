@@ -476,7 +476,7 @@ pub const SetHandler = struct {
 pub const KeysHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager, writer: *TokenWriter) !void {
-        const order = if (!writer.is_reverse_order_output) "ASC" else "DESC";
+        const order = if (!writer.options.is_reverse_order_output) "ASC" else "DESC";
 
         const statement_str_pattern = "SELECT key FROM data ORDER BY id {s}";
         var statement_str_buf: [statement_str_pattern.len + 1]u8 = undefined;
@@ -502,7 +502,7 @@ pub const KeysHandler = struct {
 pub const KeyValuesHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager, writer: *TokenWriter) !void {
-        const is_reverse = writer.is_reverse_order_output;
+        const is_reverse = writer.options.is_reverse_order_output;
         const order: []const u8 = if (!is_reverse) "ASC" else "DESC";
 
         const statement_str_pattern = "SELECT key, value FROM data ORDER BY id {s}";
@@ -532,7 +532,7 @@ pub const KeyValuesHandler = struct {
 pub const KeysLikeHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager, writer: *TokenWriter, pattern: []const u8) !void {
-        const is_reverse = writer.is_reverse_order_output;
+        const is_reverse = writer.options.is_reverse_order_output;
         const order: []const u8 = if (!is_reverse) "ASC" else "DESC";
 
         const statement_str_pattern = "SELECT key FROM data WHERE key LIKE ? ORDER BY id {s}";

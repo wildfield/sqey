@@ -7,6 +7,7 @@ const utils = @import("utils.zig");
 
 const DatabaseStateManager = database.DatabaseStateManager;
 const TokenWriter = token_writer.TokenWriter;
+const TokenWriterOptions = token_writer.TokenWriterOptions;
 
 const Options = utils.Options;
 const ProcessArgsError = utils.ProcessArgsError;
@@ -356,10 +357,7 @@ pub fn main(init: std.process.Init) !void {
                     var writer: TokenWriter = try TokenWriter.init(
                         allocator,
                         init.io,
-                        options.delimiter,
-                        options.is_binary_protocol,
-                        options.is_single_entry,
-                        options.is_reverse_order_output,
+                        TokenWriterOptions.fromArgOptions(options),
                     );
                     defer writer.deinit(allocator);
 
