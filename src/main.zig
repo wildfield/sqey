@@ -403,7 +403,6 @@ pub fn main(init: std.process.Init) !void {
                             filepath,
                             &state_manager,
                             options,
-                            init.io,
                         );
                     } else {
                         const wrapper: ArgIteratorWrapper = .{
@@ -417,7 +416,6 @@ pub fn main(init: std.process.Init) !void {
                             filepath,
                             &state_manager,
                             options,
-                            init.io,
                         );
                     }
                 },
@@ -466,9 +464,7 @@ pub fn processArgs(
     filepath: [:0]const u8,
     database_manager: *DatabaseStateManager,
     options: Options,
-    io: std.Io,
 ) !void {
-    _ = io;
     const command = try parseCommand(command_str);
 
     switch (command) {
