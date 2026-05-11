@@ -51,7 +51,7 @@ pub const TokenWriter = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
-        options: TokenWriterOptions,
+        options: utils.Options,
     ) !TokenWriter {
         const stdout_buffer = try allocator.alloc(u8, 64 * 1024);
         const stdout_writer = std.Io.File.stdout().writer(io, stdout_buffer);
@@ -59,7 +59,7 @@ pub const TokenWriter = struct {
         return .{
             .stdout_buffer = stdout_buffer,
             .stdout_writer = stdout_writer,
-            .options = options,
+            .options = .fromArgOptions(options),
         };
     }
 
