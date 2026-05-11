@@ -172,7 +172,6 @@ pub const GetHandler = struct {
     // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally.
     pub fn run(
         self: *GetHandler,
-        comptime is_stdin: bool,
         allocator: std.mem.Allocator,
         args: anytype,
         filepath: [:0]const u8,
@@ -185,7 +184,7 @@ pub const GetHandler = struct {
         defer self.close();
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
-            const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+            const key = try tempBuffered(options.is_input_stdin, &key_buffer, raw_key);
 
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
@@ -240,7 +239,6 @@ pub const GetOrElseHandler = struct {
     // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally.
     pub fn run(
         self: *GetOrElseHandler,
-        comptime is_stdin: bool,
         allocator: std.mem.Allocator,
         args: anytype,
         filepath: [:0]const u8,
@@ -253,7 +251,7 @@ pub const GetOrElseHandler = struct {
         defer self.close();
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
-            const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+            const key = try tempBuffered(options.is_input_stdin, &key_buffer, raw_key);
 
             const value = try args.next() orelse {
                 std.log.err("Missing default value for key \"{s}\"", .{key});
@@ -342,7 +340,6 @@ pub const GetOrElseSetHandler = struct {
     // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally.
     pub fn run(
         self: *GetOrElseSetHandler,
-        comptime is_stdin: bool,
         allocator: std.mem.Allocator,
         args: anytype,
         filepath: [:0]const u8,
@@ -362,7 +359,7 @@ pub const GetOrElseSetHandler = struct {
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
-            const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+            const key = try tempBuffered(options.is_input_stdin, &key_buffer, raw_key);
 
             const value = try args.next() orelse {
                 std.log.err("Missing default value for key \"{s}\"", .{key});
@@ -426,7 +423,6 @@ pub const SetHandler = struct {
     // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally.
     pub fn run(
         self: *SetHandler,
-        comptime is_stdin: bool,
         allocator: std.mem.Allocator,
         args: anytype,
         filepath: [:0]const u8,
@@ -446,7 +442,7 @@ pub const SetHandler = struct {
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
-            const key = try tempBuffered(is_stdin, &key_buffer, raw_key);
+            const key = try tempBuffered(options.is_input_stdin, &key_buffer, raw_key);
 
             const value = try args.next() orelse {
                 std.log.err("Missing value for key \"{s}\"", .{key});
@@ -739,7 +735,6 @@ pub const RenameHandler = struct {
     // Runs the full workflow: read args, open the database if needed, process each step. Close is handled externally.
     pub fn run(
         self: *RenameHandler,
-        comptime is_stdin: bool,
         allocator: std.mem.Allocator,
         args: anytype,
         filepath: [:0]const u8,
@@ -759,7 +754,7 @@ pub const RenameHandler = struct {
         errdefer self.tx.rollback(sm);
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_src| {
-            const src = try tempBuffered(is_stdin, &key_buffer, raw_src);
+            const src = try tempBuffered(options.is_input_stdin, &key_buffer, raw_src);
 
             const dest = try args.next() orelse {
                 std.log.err("Missing destination key for source key \"{s}\"", .{src});

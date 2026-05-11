@@ -12,6 +12,7 @@ pub const Options = struct {
     is_single_entry: bool = false,
     allow_create: bool = false,
     is_readonly: bool = false,
+    is_input_stdin: bool = false,
 };
 
 pub const ProcessArgsError = error{
@@ -24,7 +25,7 @@ pub fn singleEntryFail() ProcessArgsError {
 }
 
 pub fn tempBuffered(
-    comptime is_stdin: bool,
+    is_stdin: bool,
     writer: *std.Io.Writer.Allocating,
     slice: []const u8,
 ) ![]const u8 {

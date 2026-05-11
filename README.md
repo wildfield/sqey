@@ -29,7 +29,7 @@ sqey example1.db get name age city
 # London
 
 # Read key-value pairs from stdin
-echo -e "foo\nbar\nbaz\nqux" | sqey example2.db stdin set
+echo -e "foo\nbar\nbaz\nqux" | sqey example2.db -i set
 sqey example2.db keys
 # foo
 # baz
@@ -61,7 +61,6 @@ sqey new.db keys
 | `delete` | Delete keys. Fails if any key is missing | `sqey example.db delete city` |
 | `delete-if-exists` | Delete keys without error if missing | `sqey example.db delete-if-exists missing_key` |
 | `rename` | Rename keys (pairs of old/new names) | `sqey example.db rename old_key new_key` |
-| `stdin` | Read arguments from stdin instead of CLI | `echo -e "k1\nv1" \| sqey example.db stdin set` |
 
 All commands that accept keys or key-value pairs can accept more than one in a single invocation
 
@@ -75,6 +74,7 @@ All commands that accept keys or key-value pairs can accept more than one in a s
 | `-0` | Use null (`\0`) instead of newline as separator (input and output) |
 | `-b` | Use binary format (unsigned 4-byte little-endian length prefix per token) for input/output |
 | `-s` | Single entry mode: treat all input as one value; output as a single value without separators |
+| `-i` | Read command arguments from stdin instead of CLI |
 | `-h` / `--help` | Print help |
 
 Options can be combined: `sqey example.db -rn keys` (reverse, create-if-missing).
