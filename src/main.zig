@@ -23,16 +23,27 @@ const DeleteIfExistsHandler = handlers.DeleteIfExistsHandler;
 const RenameHandler = handlers.RenameHandler;
 
 const Command = enum {
+    // Retrieve values by key. Fails if any key is missing.
     Get,
+    // Retrieve value, or print a default if missing.
     GetOrElse,
+    // Like get-or-else, but also stores the default value in the database.
     GetOrElseSet,
+    // Insert or update key-value pairs.
     Set,
+    // List all keys in the database.
     Keys,
+    // List all keys and values in alternating order.
     KeyValues,
+    // List keys matching a SQL LIKE pattern.
     KeysLike,
+    // Delete keys. Fails if any key is missing.
     Delete,
+    // Delete keys without error if they are missing.
     DeleteIfExists,
+    // Rename keys (pairs of old/new names).
     Rename,
+    // Read arguments from stdin instead of CLI.
     Stdin,
 };
 

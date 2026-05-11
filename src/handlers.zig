@@ -134,6 +134,7 @@ pub const Transaction = struct {
     }
 };
 
+/// Retrieve values by key. Fails if any key is missing.
 pub const GetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
 
@@ -202,6 +203,7 @@ pub const GetHandler = struct {
     }
 };
 
+/// Retrieve value, or print a default if missing.
 pub const GetOrElseHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
 
@@ -274,6 +276,7 @@ pub const GetOrElseHandler = struct {
     }
 };
 
+/// Like get-or-else, but also stores the default value in the database.
 pub const GetOrElseSetHandler = struct {
     get_statement: ?*c.sqlite3_stmt = null,
     insert_statement: ?*c.sqlite3_stmt = null,
@@ -384,6 +387,7 @@ pub const GetOrElseSetHandler = struct {
     }
 };
 
+/// Insert or update key-value pairs.
 pub const SetHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     tx: Transaction = .{},
@@ -467,6 +471,7 @@ pub const SetHandler = struct {
     }
 };
 
+/// List all keys in the database.
 pub const KeysHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager) !void {
@@ -492,6 +497,7 @@ pub const KeysHandler = struct {
     }
 };
 
+/// List all keys and values in alternating order.
 pub const KeyValuesHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager) !void {
@@ -521,6 +527,7 @@ pub const KeyValuesHandler = struct {
     }
 };
 
+/// List keys matching a SQL LIKE pattern.
 pub const KeysLikeHandler = struct {
     // Runs the full workflow. Keys workflows are performed in a single step.
     pub fn run(sm: *DatabaseStateManager, pattern: []const u8) !void {
@@ -549,6 +556,7 @@ pub const KeysLikeHandler = struct {
     }
 };
 
+/// Delete keys. Fails if any key is missing.
 pub const DeleteHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     tx: Transaction = .{},
@@ -622,6 +630,7 @@ pub const DeleteHandler = struct {
     }
 };
 
+/// Delete keys without error if they are missing.
 pub const DeleteIfExistsHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     tx: Transaction = .{},
@@ -688,6 +697,7 @@ pub const DeleteIfExistsHandler = struct {
     }
 };
 
+/// Rename keys (pairs of old/new names).
 pub const RenameHandler = struct {
     statement: ?*c.sqlite3_stmt = null,
     tx: Transaction = .{},
