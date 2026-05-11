@@ -43,8 +43,6 @@ const Command = enum {
     DeleteIfExists,
     // Rename keys (pairs of old/new names).
     Rename,
-    // Read arguments from stdin instead of CLI.
-    Stdin,
 };
 
 const ArgIteratorWrapper = struct {
@@ -194,7 +192,6 @@ const help =
     \\  delete            Delete keys. Fails if any key is missing
     \\  delete-if-exists  Delete keys without error if missing
     \\  rename            Rename keys (pairs of old/new names)
-    \\  stdin             Read arguments from stdin instead of CLI
     \\
     \\Options:
     \\  -n                Create the database file if it does not exist
@@ -203,6 +200,7 @@ const help =
     \\  -0                Use null (\\0) instead of newline as separator
     \\  -b                Use binary format (4-byte unsigned little-endian length prefix per token)
     \\  -s                Single entry mode: treat all input as one value
+    \\  -i                Read commands and arguments from stdin. You can pass leading arguments after -i
     \\  -h/--help         Print help
     \\
 ;
@@ -303,8 +301,12 @@ fn parseOptionsOrArg(
                 }
             }
 
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'i')) {
+                options.is_input_stdin = true;
+            }
+
             for (options_arg) |byte| {
-                const valid_flags = "-0bsrno";
+                const valid_flags = "-0bsrnoi";
                 const is_valid_flag = std.mem.containsAtLeastScalar(u8, valid_flags, 1, byte);
                 if (!is_valid_flag) {
                     printHelp(io);
@@ -347,8 +349,12 @@ pub fn main(init: std.process.Init) !void {
                     const command_str = command_result.arg;
                     options = command_result.options;
 
-                    var stdout_buffer: [65536]u8 = undefined;
-                    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
+                    var allocator = std.heap.smp_allocator;
+
+                    const stdout_buffer = try allocator.alloc(u8, 64 * 1024);
+                    defer allocator.free(stdout_buffer);
+
+                    var stdout_writer = std.Io.File.stdout().writer(init.io, stdout_buffer);
                     const stdout = &stdout_writer.interface;
 
                     var state_manager: DatabaseStateManager = .{
@@ -361,20 +367,30 @@ pub fn main(init: std.process.Init) !void {
                     };
                     defer state_manager.close();
 
-                    const wrapper: ArgIteratorWrapper = .{
-                        .iterator = &args,
-                    };
+                    if (options.is_input_stdin) {
+                        try processStdinArgs(
+                            allocator,
+                            &args,
+                            init,
+                            command_str,
+                            filepath,
+                            &state_manager,
+                            options,
+                        );
+                    } else {
+                        const wrapper: ArgIteratorWrapper = .{
+                            .iterator = &args,
+                        };
 
-                    try processArgs(
-                        false,
-                        std.heap.smp_allocator,
-                        wrapper,
-                        command_str,
-                        filepath,
-                        &state_manager,
-                        options,
-                        init.io,
-                    );
+                        try processArgs(
+                            std.heap.smp_allocator,
+                            wrapper,
+                            command_str,
+                            filepath,
+                            &state_manager,
+                            options,
+                        );
+                    }
                 },
             }
         },
@@ -387,7 +403,6 @@ const CommandError = error{
 
 pub fn parseCommand(
     str: []const u8,
-    is_stdin: bool,
 ) !Command {
     if (std.mem.eql(u8, str, "get")) {
         return Command.Get;
@@ -409,55 +424,89 @@ pub fn parseCommand(
         return Command.DeleteIfExists;
     } else if (std.mem.eql(u8, str, "rename")) {
         return Command.Rename;
-    } else if (std.mem.eql(u8, str, "stdin")) {
-        if (is_stdin) {
-            std.log.err("Cannot process \"stdin\" while already reading from stdin", .{});
-            return CommandError.InvalidCommand;
-        } else {
-            return Command.Stdin;
-        }
     } else {
-        std.log.err("Unknown command. Possible commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, rename, stdin", .{});
+        std.log.err("Unknown command. Possible commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, rename", .{});
         return CommandError.InvalidCommand;
     }
 }
 
+// Reads arguments from stdin using the configured delimiter and binary protocol
+// Prepends any trailing CLI arguments before reading arguments from stdin
+fn processStdinArgs(
+    allocator: std.mem.Allocator,
+    args: *std.process.Args.Iterator,
+    init: std.process.Init,
+    command_str: [:0]const u8,
+    filepath: [:0]const u8,
+    state_manager: *DatabaseStateManager,
+    options: Options,
+) !void {
+    const stdin_buffer = try allocator.alloc(u8, 64 * 1024);
+    defer allocator.free(stdin_buffer);
+
+    var stdin_reader = std.Io.File.stdin().reader(init.io, stdin_buffer);
+    const stdin = &stdin_reader.interface;
+
+    var trailing_args_buffer = try std.ArrayList([]const u8).initCapacity(allocator, 8);
+    defer {
+        for (trailing_args_buffer.items) |item| {
+            allocator.free(item);
+        }
+        trailing_args_buffer.deinit(allocator);
+    }
+
+    while (args.next()) |arg| {
+        try trailing_args_buffer.append(allocator, try allocator.dupe(u8, arg));
+    }
+
+    var iterator = StdinIterator.init(
+        allocator,
+        stdin,
+        trailing_args_buffer.items,
+        .{
+            .delimiter = options.delimiter,
+            .is_binary_protocol = options.is_binary_protocol,
+            .is_single_entry = options.is_single_entry,
+        },
+    );
+    defer iterator.deinit();
+
+    try processArgs(
+        allocator,
+        &iterator,
+        command_str,
+        filepath,
+        state_manager,
+        options,
+    );
+}
+
 pub fn processArgs(
-    comptime is_stdin: bool,
     allocator: std.mem.Allocator,
     args: anytype,
     command_str: [:0]const u8,
     filepath: [:0]const u8,
     database_manager: *DatabaseStateManager,
     options: Options,
-    io: std.Io,
 ) !void {
-    const command = if (is_stdin) command: {
-        if (try args.next()) |arg| {
-            const command = try parseCommand(arg, is_stdin);
-            break :command command;
-        } else {
-            std.log.err("Missing a command in the std input", .{});
-            return ProcessArgsError.GeneralError;
-        }
-    } else try parseCommand(command_str, is_stdin);
+    const command = try parseCommand(command_str);
 
     switch (command) {
         .Get => {
             var handler: GetHandler = .{};
-            try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
+            try handler.run(allocator, args, filepath, database_manager, options);
         },
         .GetOrElse => {
             var handler: GetOrElseHandler = .{};
-            try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
+            try handler.run(allocator, args, filepath, database_manager, options);
         },
         .GetOrElseSet => {
             var handler: GetOrElseSetHandler = .{};
-            try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
+            try handler.run(allocator, args, filepath, database_manager, options);
         },
         .Set => {
             var handler: SetHandler = .{};
-            try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
+            try handler.run(allocator, args, filepath, database_manager, options);
         },
         .Keys => {
             if (options.is_single_entry) {
@@ -516,56 +565,7 @@ pub fn processArgs(
         },
         .Rename => {
             var handler: RenameHandler = .{};
-            try handler.run(is_stdin, allocator, args, filepath, database_manager, options);
-        },
-        .Stdin => {
-            if (!is_stdin) {
-                const stdin_buffer = try allocator.alloc(u8, 64 * 1024);
-                defer allocator.free(stdin_buffer);
-
-                var stdin_reader = std.Io.File.stdin().reader(io, stdin_buffer);
-                const stdin = &stdin_reader.interface;
-
-                var trailing_args_buffer = try std.ArrayList([]const u8).initCapacity(allocator, 8);
-                defer {
-                    for (trailing_args_buffer.items) |item| {
-                        allocator.free(item);
-                    }
-                    trailing_args_buffer.deinit(allocator);
-                }
-
-                while (try args.next()) |arg| {
-                    try trailing_args_buffer.append(allocator, try allocator.dupe(u8, arg));
-                }
-
-                var iterator = StdinIterator.init(
-                    allocator,
-                    stdin,
-                    trailing_args_buffer.items,
-                    .{
-                        .delimiter = options.delimiter,
-                        .is_binary_protocol = options.is_binary_protocol,
-                        .is_single_entry = options.is_single_entry,
-                    },
-                );
-                defer {
-                    iterator.deinit();
-                }
-
-                return try processArgs(
-                    true,
-                    allocator,
-                    &iterator,
-                    command_str,
-                    filepath,
-                    database_manager,
-                    options,
-                    io,
-                );
-            } else {
-                std.log.err("Processing stdin from stdin", .{});
-                return ProcessArgsError.GeneralError;
-            }
+            try handler.run(allocator, args, filepath, database_manager, options);
         },
     }
 }
