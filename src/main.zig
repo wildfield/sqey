@@ -351,7 +351,9 @@ pub fn main(init: std.process.Init) !void {
 
                     var allocator = std.heap.smp_allocator;
 
-                    var stdout_buffer: [65536]u8 = undefined;
+                    const stdout_buffer = try allocator.alloc(u8, 64 * 1024);
+                    defer allocator.free(stdout_buffer);
+
                     var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
                     const stdout = &stdout_writer.interface;
 
