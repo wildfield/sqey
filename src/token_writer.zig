@@ -3,28 +3,6 @@ const std = @import("std");
 
 pub const Error = error{SizeTooLarge};
 
-pub fn writeTokenToWriter(
-    writer: *std.Io.Writer,
-    delimiter: u8,
-    is_binary_format: bool,
-    is_single_entry: bool,
-    token: []const u8,
-) !void {
-    if (is_binary_format) {
-        if (std.math.cast(u32, token.len)) |len| {
-            _ = try writer.writeInt(u32, len, .little);
-        } else {
-            return Error.SizeTooLarge;
-        }
-        _ = try writer.writeAll(token);
-    } else if (is_single_entry) {
-        _ = try writer.writeAll(token);
-    } else {
-        _ = try writer.writeAll(token);
-        _ = try writer.writeByte(delimiter);
-    }
-}
-
 /// Configuration for how tokens are written to stdout.
 pub const TokenWriterOptions = struct {
     delimiter: u8,
@@ -69,12 +47,20 @@ pub const TokenWriter = struct {
     }
 
     pub fn printToken(self: *TokenWriter, token: []const u8) !void {
-        try writeTokenToWriter(
-            &self.stdout_writer.interface,
-            self.options.delimiter,
-            self.options.is_binary_protocol,
-            self.options.is_single_entry,
-            token,
-        );
+        const writer = &self.stdout_writer.interface;
+
+        if (self.options.is_binary_protocol) {
+            if (std.math.cast(u32, token.len)) |len| {
+                _ = try writer.writeInt(u32, len, .little);
+            } else {
+                return Error.SizeTooLarge;
+            }
+            _ = try writer.writeAll(token);
+        } else if (self.options.is_single_entry) {
+            _ = try writer.writeAll(token);
+        } else {
+            _ = try writer.writeAll(token);
+            _ = try writer.writeByte(self.options.delimiter);
+        }
     }
 };
