@@ -10,6 +10,7 @@ pub const DbError = error{
     FailedToGetKey,
     FailedToDeleteKey,
     FailedToRenameKey,
+    CompareAndSwapFailed,
     UnexpectedNullEntry,
     EphemeralDatabaseNotAllowed,
     FailedToPrepareStatement,
