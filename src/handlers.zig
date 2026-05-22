@@ -833,7 +833,7 @@ pub const CompareAndSwapHandler = struct {
             }
         } else if (result_code == c.SQLITE_DONE) {
             std.log.err("Key not found for compare and swap: \"{s}\"", .{key});
-            return DbError.CompareAndSwapFailed;
+            return DbError.FailedToGetKey;
         } else {
             std.log.err("Failed to read row: {s}", .{c.sqlite3_errmsg(sm.db)});
             return DbError.FailedToExecuteQuery;

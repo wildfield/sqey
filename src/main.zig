@@ -329,7 +329,7 @@ fn parseOptionsOrArg(
     return .{ .OptionsAndArg = .{ .options = options, .arg = arg } };
 }
 
-pub fn main(init: std.process.Init) !void {
+pub fn main(init: std.process.Init) !u8 {
     var args = std.process.Args.iterate(init.minimal.args);
     _ = args.skip();
 
@@ -338,7 +338,7 @@ pub fn main(init: std.process.Init) !void {
     switch (filepath_result) {
         .Help => {
             printHelp(init.io);
-            return;
+            return 0;
         },
         .OptionsAndArg => |result| {
             const filepath = result.arg;
@@ -348,7 +348,7 @@ pub fn main(init: std.process.Init) !void {
             switch (command_str_result) {
                 .Help => {
                     printHelp(init.io);
-                    return;
+                    return 0;
                 },
                 .OptionsAndArg => |command_result| {
                     const command_str = command_result.arg;
@@ -369,7 +369,7 @@ pub fn main(init: std.process.Init) !void {
                     defer state_manager.close();
 
                     if (options.is_input_stdin) {
-                        try processStdinArgs(
+                        processStdinArgs(
                             allocator,
                             &args,
                             init,
@@ -378,13 +378,16 @@ pub fn main(init: std.process.Init) !void {
                             &state_manager,
                             &writer,
                             options,
-                        );
+                        ) catch |err| {
+                            if (err == database.DbError.CompareAndSwapFailed) return 2;
+                            return err;
+                        };
                     } else {
                         const wrapper: ArgIteratorWrapper = .{
                             .iterator = &args,
                         };
 
-                        try processArgs(
+                        processArgs(
                             std.heap.smp_allocator,
                             wrapper,
                             command_str,
@@ -392,8 +395,12 @@ pub fn main(init: std.process.Init) !void {
                             &state_manager,
                             &writer,
                             options,
-                        );
+                        ) catch |err| {
+                            if (err == database.DbError.CompareAndSwapFailed) return 2;
+                            return err;
+                        };
                     }
+                    return 0;
                 },
             }
         },
