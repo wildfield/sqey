@@ -45,6 +45,8 @@ const Command = enum {
     DeleteIfExists,
     // Rename keys (pairs of old/new names).
     Rename,
+    // Compare and swap multiple key-value pairs.
+    CompareAndSwap,
 };
 
 const ArgIteratorWrapper = struct {
@@ -194,6 +196,7 @@ const help =
     \\  delete            Delete keys. Fails if any key is missing
     \\  delete-if-exists  Delete keys without error if missing
     \\  rename            Rename keys (pairs of old/new names)
+    \\  compare-and-swap   Compare and swap multiple key-value pairs
     \\
     \\Options:
     \\  -n                Create the database file if it does not exist
@@ -424,8 +427,10 @@ pub fn parseCommand(
         return Command.DeleteIfExists;
     } else if (std.mem.eql(u8, str, "rename")) {
         return Command.Rename;
+    } else if (std.mem.eql(u8, str, "compare-and-swap")) {
+        return Command.CompareAndSwap;
     } else {
-        std.log.err("Unknown command. Possible commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, rename", .{});
+        std.log.err("Unknown command. Possible commands: get, get-or-else, get-or-else-set, set, keys, key-values, keys-like, delete, delete-if-exists, rename, compare-and-swap", .{});
         return CommandError.InvalidCommand;
     }
 }
@@ -568,6 +573,10 @@ pub fn processArgs(
         },
         .Rename => {
             var handler: RenameHandler = .{};
+            try handler.run(allocator, args, filepath, database_manager, options);
+        },
+        .CompareAndSwap => {
+            var handler: handlers.CompareAndSwapHandler = .{};
             try handler.run(allocator, args, filepath, database_manager, options);
         },
     }

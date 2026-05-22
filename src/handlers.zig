@@ -119,6 +119,13 @@ pub const Transaction = struct {
         }
     }
 
+    fn beginExclusive(self: *Transaction, sm: *DatabaseStateManager) !void {
+        if (!self.active) {
+            try sqlite3SimpleExec(sm.db, "BEGIN EXCLUSIVE TRANSACTION", "Failed to begin exclusive transaction {s}");
+            self.active = true;
+        }
+    }
+
     // Swallows errors. Normally used in defer statements
     fn rollback(self: *Transaction, sm: *DatabaseStateManager) void {
         if (self.active) {
@@ -779,6 +786,124 @@ pub const RenameHandler = struct {
 
         if (!did_receive_valid_arg) {
             std.log.err("Missing at least one key pair for rename command", .{});
+            return ProcessArgsError.GeneralError;
+        }
+    }
+};
+
+/// Compare and swap multiple key-value pairs.
+/// Fails if any old value does not match current value.
+pub const CompareAndSwapHandler = struct {
+    get_statement: ?*c.sqlite3_stmt = null,
+    set_statement: ?*c.sqlite3_stmt = null,
+    tx: Transaction = .{},
+
+    fn processStep(self: *CompareAndSwapHandler, sm: *DatabaseStateManager, key: []const u8, old_value: []const u8, new_value: []const u8) !void {
+        if (self.get_statement == null) {
+            self.get_statement = try prepareStatement(sm.db, "SELECT value FROM data WHERE key = ?");
+            self.set_statement = try prepareStatement(
+                sm.db,
+                "INSERT INTO data (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET id=excluded.id, value=excluded.value",
+            );
+        }
+
+        defer {
+            if (self.get_statement) |stmt| {
+                const reset_code = c.sqlite3_reset(stmt);
+                if (reset_code != c.SQLITE_OK) {
+                    std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(sm.db)});
+                }
+            }
+            if (self.set_statement) |stmt| {
+                const reset_code = c.sqlite3_reset(stmt);
+                if (reset_code != c.SQLITE_OK) {
+                    std.log.err("Failed to reset: {s}", .{c.sqlite3_errmsg(sm.db)});
+                }
+            }
+        }
+
+        try bindText(sm.db, self.get_statement.?, 1, key);
+
+        const result_code = c.sqlite3_step(self.get_statement.?);
+        if (result_code == c.SQLITE_ROW) {
+            const current_value = try getColumnBlob(self.get_statement.?, 0);
+            if (!std.mem.eql(u8, current_value, old_value)) {
+                std.log.err("Value mismatch for key \"{s}\". Expected \"{s}\", found \"{s}\"", .{key, old_value, current_value});
+                return DbError.CompareAndSwapFailed;
+            }
+        } else if (result_code == c.SQLITE_DONE) {
+            std.log.err("Key not found for compare and swap: \"{s}\"", .{key});
+            return DbError.CompareAndSwapFailed;
+        } else {
+            std.log.err("Failed to read row: {s}", .{c.sqlite3_errmsg(sm.db)});
+            return DbError.FailedToExecuteQuery;
+        }
+
+        try bindText(sm.db, self.set_statement.?, 1, key);
+        try bindBlob(sm.db, self.set_statement.?, 2, new_value);
+        const set_result_code = c.sqlite3_step(self.set_statement.?);
+        if (set_result_code != c.SQLITE_DONE) {
+            std.log.err("Failed to update row: {s}", .{c.sqlite3_errmsg(sm.db)});
+            return DbError.FailedToExecuteQuery;
+        }
+    }
+
+    pub fn close(self: *CompareAndSwapHandler) void {
+        if (self.get_statement) |stmt| {
+            _ = c.sqlite3_finalize(stmt);
+        }
+        if (self.set_statement) |stmt| {
+            _ = c.sqlite3_finalize(stmt);
+        }
+    }
+
+    pub fn run(
+        self: *CompareAndSwapHandler,
+        allocator: std.mem.Allocator,
+        args: anytype,
+        filepath: [:0]const u8,
+        sm: *DatabaseStateManager,
+        options: Options,
+    ) !void {
+        var buf = std.Io.Writer.Allocating.init(allocator);
+        defer buf.deinit();
+
+        if (options.is_readonly) {
+            std.log.err("Write operation is not allowed in readonly mode", .{});
+            return ProcessArgsError.GeneralError;
+        }
+
+        defer self.close();
+        defer self.tx.commit(sm);
+        errdefer self.tx.rollback(sm);
+
+        var did_receive_valid_arg = false;
+        while (try args.next()) |raw_key| {
+            const key = try tempBuffered(options.is_input_stdin, &buf, raw_key);
+
+            const old_val = try args.next() orelse {
+                std.log.err("Missing old value for key \"{s}\"", .{key});
+                return ProcessArgsError.GeneralError;
+            };
+
+            const new_val = try args.next() orelse {
+                std.log.err("Missing new value for key \"{s}\"", .{key});
+                return ProcessArgsError.GeneralError;
+            };
+
+            if (!did_receive_valid_arg) {
+                did_receive_valid_arg = true;
+                try sm.open(filepath, options.allow_create);
+                try self.tx.beginExclusive(sm);
+            } else if (options.is_single_entry) {
+                return singleEntryFail();
+            }
+
+            try self.processStep(sm, key, old_val, new_val);
+        }
+
+        if (!did_receive_valid_arg) {
+            std.log.err("Missing at least one triplet (key, old_value, new_value) for compare-and-swap command", .{});
             return ProcessArgsError.GeneralError;
         }
     }
