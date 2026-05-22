@@ -865,8 +865,10 @@ pub const CompareAndSwapHandler = struct {
         sm: *DatabaseStateManager,
         options: Options,
     ) !void {
-        var buf = std.Io.Writer.Allocating.init(allocator);
-        defer buf.deinit();
+        var key_buf = std.Io.Writer.Allocating.init(allocator);
+        defer key_buf.deinit();
+        var old_buf = std.Io.Writer.Allocating.init(allocator);
+        defer old_buf.deinit();
 
         if (options.is_readonly) {
             std.log.err("Write operation is not allowed in readonly mode", .{});
@@ -879,14 +881,15 @@ pub const CompareAndSwapHandler = struct {
 
         var did_receive_valid_arg = false;
         while (try args.next()) |raw_key| {
-            const key = try tempBuffered(options.is_input_stdin, &buf, raw_key);
+            const key = try tempBuffered(options.is_input_stdin, &key_buf, raw_key);
 
-            const old_val = try args.next() orelse {
+            const raw_old = try args.next() orelse {
                 std.log.err("Missing old value for key \"{s}\"", .{key});
                 return ProcessArgsError.GeneralError;
             };
+            const old_val = try tempBuffered(options.is_input_stdin, &old_buf, raw_old);
 
-            const new_val = try args.next() orelse {
+            const raw_new = try args.next() orelse {
                 std.log.err("Missing new value for key \"{s}\"", .{key});
                 return ProcessArgsError.GeneralError;
             };
@@ -899,7 +902,7 @@ pub const CompareAndSwapHandler = struct {
                 return singleEntryFail();
             }
 
-            try self.processStep(sm, key, old_val, new_val);
+            try self.processStep(sm, key, old_val, raw_new);
         }
 
         if (!did_receive_valid_arg) {

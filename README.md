@@ -63,6 +63,7 @@ Tested on Arch Linux and MacOS
 | `delete` | Delete keys. Fails if any key is missing | `sqey example.db delete city` |
 | `delete-if-exists` | Delete keys without error if missing | `sqey example.db delete-if-exists missing_key` |
 | `rename` | Rename keys (pairs of old/new names) | `sqey example.db rename old_key new_key` |
+| `compare-and-swap` | Compare and swap multiple key-value pairs. Fails if any old value does not match current value | `sqey example.db compare-and-swap key1 old1 new1 key2 old2 new2` |
 
 All commands that accept keys or key-value pairs can accept more than one in a single invocation
 
