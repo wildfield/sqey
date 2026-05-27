@@ -34,7 +34,7 @@ pub fn tempBuffered(
     // therefore no need to copy again.
     if (is_stdin) {
         writer.clearRetainingCapacity();
-        _ = try writer.writer.write(slice);
+        _ = try writer.writer.writeAll(slice);
         return writer.written();
     } else {
         return slice;

@@ -139,7 +139,7 @@ const StdinIterator = struct {
             if (self.is_done) return null;
             self.input_writer.clearRetainingCapacity();
 
-            _ = try self.reader.stream(&self.input_writer.writer, .limited(MAX_STDIN_SIZE));
+            _ = try self.reader.streamRemaining(&self.input_writer.writer);
             self.is_done = true;
 
             return self.input_writer.written();
