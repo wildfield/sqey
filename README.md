@@ -19,7 +19,7 @@ sqey example1.db get name age city
 # London
 
 # Read key-value pairs from stdin
-echo -e "foo\nbar\nbaz\nqux" | sqey example2.db -i set
+echo -e "foo\nbar\nbaz\nqux" | sqey example2.db -I set
 sqey example2.db keys
 # foo
 # baz
