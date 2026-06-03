@@ -68,14 +68,14 @@ const StdinIteratorError = error{
 const StdinIteratorOptions = struct {
     delimiter: u8,
     is_binary_protocol: bool,
-    is_single_input: bool,
+    is_single_entry_input: bool,
 };
 
 const StdinIterator = struct {
     reader: *std.Io.Reader,
     delimiter: u8,
     is_binary_protocol: bool,
-    is_single_input: bool,
+    is_single_entry_input: bool,
     is_done: bool = false,
     leftover_args: []const []const u8,
     leftover_args_read_count: usize = 0,
@@ -88,7 +88,7 @@ const StdinIterator = struct {
             .reader = reader,
             .delimiter = options.delimiter,
             .is_binary_protocol = options.is_binary_protocol,
-            .is_single_input = options.is_single_input,
+            .is_single_entry_input = options.is_single_entry_input,
             .leftover_args = leftover_args,
             .input_writer = input_writer,
         };
@@ -135,7 +135,7 @@ const StdinIterator = struct {
                     }
                 }
             }
-        } else if (self.is_single_input) {
+        } else if (self.is_single_entry_input) {
             if (self.is_done) return null;
             self.input_writer.clearRetainingCapacity();
 
@@ -489,7 +489,7 @@ fn processStdinArgs(
         .{
             .delimiter = options.delimiter,
             .is_binary_protocol = options.is_binary_protocol,
-            .is_single_input = options.is_single_entry_input,
+            .is_single_entry_input = options.is_single_entry_input,
         },
     );
     defer iterator.deinit();
