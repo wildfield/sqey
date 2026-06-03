@@ -202,13 +202,13 @@ const help =
     \\  -n                Create the database file if it does not exist
     \\  -o                Open in readonly mode (write commands fail)
     \\  -r                Reverse output order for keys, key-values, etc.
-    \\  -z                Use null (\\0) instead of newline as output separator
-    \\  -Z                Use null (\\0) instead of newline as input separator
+    \\  -z                Use null (\\0) instead of newline as output separator (not stdin)
+    \\  -Z                Use null (\\0) instead of newline as input separator (enables stdin)
     \\  -b                Use binary output format (32-bit unsigned little-endian length prefix per token)
-    \\  -B                Use binary input format (32-bit unsigned little-endian length prefix per token)
-    \\  -s                Single entry input mode: treat all input as one value
-    \\  -S                Single entry output mode: output without separators
-    \\  -I                Read commands and arguments from stdin. You can pass leading arguments after -I
+    \\  -B                Use binary input format (32-bit unsigned little-endian length prefix per token, enables stdin)
+    \\  -S                Single entry input mode: treat all input as one value (enables stdin)
+    \\  -s                Single entry output mode: output without separators
+    \\  -I                Read commands and arguments from stdin (uses \\n delimiter). Mutually exclusive with -Z/-B/-S
     \\  -h/--help         Print help
     \\
 ;
@@ -263,6 +263,7 @@ fn parseOptionsOrArg(
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'Z')) {
                 if (!options.is_binary_input and !options.is_single_entry_input) {
                     options.input_delimiter = 0;
+                    options.is_input_stdin = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return OptionsParsingError.ConflictingOptions;
@@ -281,6 +282,7 @@ fn parseOptionsOrArg(
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'B')) {
                 if (options.input_delimiter != 0 and !options.is_single_entry_input) {
                     options.is_binary_input = true;
+                    options.is_input_stdin = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return OptionsParsingError.ConflictingOptions;
@@ -296,16 +298,17 @@ fn parseOptionsOrArg(
                 }
             }
 
-            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 's')) {
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'S')) {
                 if (options.input_delimiter != 0 and !options.is_binary_input) {
                     options.is_single_entry_input = true;
+                    options.is_input_stdin = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return OptionsParsingError.ConflictingOptions;
                 }
             }
 
-            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'S')) {
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 's')) {
                 if (options.output_delimiter != 0 and !options.is_binary_output) {
                     options.is_single_entry_output = true;
                 } else {
@@ -337,6 +340,10 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'I')) {
+                if (options.input_delimiter == 0 or options.is_binary_input or options.is_single_entry_input) {
+                    std.log.err("-I and -Z/-B/-S are mutually exclusive", .{});
+                    return OptionsParsingError.ConflictingOptions;
+                }
                 options.is_input_stdin = true;
             }
 
