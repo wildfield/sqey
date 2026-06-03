@@ -67,14 +67,14 @@ const StdinIteratorError = error{
 
 const StdinIteratorOptions = struct {
     delimiter: u8,
-    is_binary_protocol: bool,
+    is_binary_input: bool,
     is_single_entry_input: bool,
 };
 
 const StdinIterator = struct {
     reader: *std.Io.Reader,
     delimiter: u8,
-    is_binary_protocol: bool,
+    is_binary_input: bool,
     is_single_entry_input: bool,
     is_done: bool = false,
     leftover_args: []const []const u8,
@@ -87,7 +87,7 @@ const StdinIterator = struct {
         return .{
             .reader = reader,
             .delimiter = options.delimiter,
-            .is_binary_protocol = options.is_binary_protocol,
+            .is_binary_input = options.is_binary_input,
             .is_single_entry_input = options.is_single_entry_input,
             .leftover_args = leftover_args,
             .input_writer = input_writer,
@@ -103,7 +103,7 @@ const StdinIterator = struct {
         if (self.leftover_args_read_count < self.leftover_args.len) {
             self.leftover_args_read_count += 1;
             return self.leftover_args[self.leftover_args_read_count - 1];
-        } else if (self.is_binary_protocol) {
+        } else if (self.is_binary_input) {
             while (true) {
                 if (self.is_done) return null;
                 self.input_writer.clearRetainingCapacity();
@@ -204,7 +204,8 @@ const help =
     \\  -r                Reverse output order for keys, key-values, etc.
     \\  -z                Use null (\\0) instead of newline as output separator
     \\  -Z                Use null (\\0) instead of newline as input separator
-    \\  -b                Use binary format (32-bit unsigned little-endian length prefix per token)
+    \\  -b                Use binary output format (32-bit unsigned little-endian length prefix per token)
+    \\  -B                Use binary input format (32-bit unsigned little-endian length prefix per token)
     \\  -s                Single entry input mode: treat all input as one value
     \\  -S                Single entry output mode: output without separators
     \\  -i                Read commands and arguments from stdin. You can pass leading arguments after -i
@@ -260,7 +261,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'Z')) {
-                if (!options.is_binary_protocol and !options.is_single_entry_input) {
+                if (!options.is_binary_input and !options.is_single_entry_input) {
                     options.input_delimiter = 0;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -269,7 +270,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'z')) {
-                if (!options.is_binary_protocol and !options.is_single_entry_output) {
+                if (!options.is_binary_output and !options.is_single_entry_output) {
                     options.output_delimiter = 0;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -277,9 +278,18 @@ fn parseOptionsOrArg(
                 }
             }
 
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'B')) {
+                if (options.input_delimiter != 0 and !options.is_single_entry_input) {
+                    options.is_binary_input = true;
+                } else {
+                    std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
+                    return OptionsParsingError.ConflictingOptions;
+                }
+            }
+
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'b')) {
-                if (options.input_delimiter != 0 and options.output_delimiter != 0 and !options.is_single_entry_input and !options.is_single_entry_output) {
-                    options.is_binary_protocol = true;
+                if (options.output_delimiter != 0 and !options.is_single_entry_output) {
+                    options.is_binary_output = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return OptionsParsingError.ConflictingOptions;
@@ -287,7 +297,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 's')) {
-                if (options.input_delimiter != 0 and !options.is_binary_protocol) {
+                if (options.input_delimiter != 0 and !options.is_binary_input) {
                     options.is_single_entry_input = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -296,7 +306,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'S')) {
-                if (options.output_delimiter != 0 and !options.is_binary_protocol) {
+                if (options.output_delimiter != 0 and !options.is_binary_output) {
                     options.is_single_entry_output = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -331,7 +341,7 @@ fn parseOptionsOrArg(
             }
 
             for (options_arg) |byte| {
-                const valid_flags = "-zZbsrnoiS";
+                const valid_flags = "-zZbBsrnoiS";
                 const is_valid_flag = std.mem.containsAtLeastScalar(u8, valid_flags, 1, byte);
                 if (!is_valid_flag) {
                     printHelp(io);
@@ -498,7 +508,7 @@ fn processStdinArgs(
         trailing_args_buffer.items,
         .{
             .delimiter = options.input_delimiter,
-            .is_binary_protocol = options.is_binary_protocol,
+            .is_binary_input = options.is_binary_input,
             .is_single_entry_input = options.is_single_entry_input,
         },
     );
