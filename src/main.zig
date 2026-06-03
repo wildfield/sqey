@@ -204,8 +204,8 @@ const help =
     \\  -r                Reverse output order for keys, key-values, etc.
     \\  -0                Use null (\\0) instead of newline as separator
     \\  -b                Use binary format (32-bit unsigned little-endian length prefix per token)
-    \\  -s                Single input mode: treat all input as one value
-    \\  -S                Single output mode: output without separators
+    \\  -s                Single entry input mode: treat all input as one value
+    \\  -S                Single entry output mode: output without separators
     \\  -i                Read commands and arguments from stdin. You can pass leading arguments after -i
     \\  -h/--help         Print help
     \\
