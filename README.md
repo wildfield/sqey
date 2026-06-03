@@ -74,7 +74,7 @@ All commands that accept keys or key-value pairs can accept more than one in a s
 | `-n` | Create the database file if it does not exist. `set` and `get-or-else-set` default to true |
 | `-o` | Open in readonly mode (write commands fail) |
 | `-r` | Reverse output order for `keys`, `key-values`, etc. |
-| `-0` | Use null (`\0`) instead of newline as separator (input and output) |
+| `-z` | Use null (`\0`) instead of newline as separator (input and output) |
 | `-b` | Use binary format (unsigned 32-bit little-endian length prefix per token) for input/output |
 | `-s` | Single entry input mode: treat all input as one value |
 | `-S` | Single entry output mode: output without separators |

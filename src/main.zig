@@ -202,7 +202,7 @@ const help =
     \\  -n                Create the database file if it does not exist
     \\  -o                Open in readonly mode (write commands fail)
     \\  -r                Reverse output order for keys, key-values, etc.
-    \\  -0                Use null (\\0) instead of newline as separator
+    \\  -z                Use null (\\0) instead of newline as separator
     \\  -b                Use binary format (32-bit unsigned little-endian length prefix per token)
     \\  -s                Single entry input mode: treat all input as one value
     \\  -S                Single entry output mode: output without separators
@@ -258,7 +258,7 @@ fn parseOptionsOrArg(
                 return .{ .Help = undefined };
             }
 
-            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, '0')) {
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'z')) {
                 if (!options.is_binary_protocol and !options.is_single_entry_input and !options.is_single_entry_output) {
                     options.delimiter = 0;
                 } else {
@@ -321,7 +321,7 @@ fn parseOptionsOrArg(
             }
 
             for (options_arg) |byte| {
-                const valid_flags = "-0bsrnoiS";
+                const valid_flags = "-zbsrnoiS";
                 const is_valid_flag = std.mem.containsAtLeastScalar(u8, valid_flags, 1, byte);
                 if (!is_valid_flag) {
                     printHelp(io);
