@@ -12,7 +12,7 @@ pub const TokenWriterOptions = struct {
 
     pub fn fromArgOptions(options: utils.Options) TokenWriterOptions {
         return .{
-            .delimiter = options.delimiter,
+            .delimiter = options.output_delimiter,
             .is_binary_protocol = options.is_binary_protocol,
             .is_single_entry_output = options.is_single_entry_output,
             .is_reverse_order_output = options.is_reverse_order_output,

@@ -6,7 +6,8 @@ pub const KeyValuePair = struct {
 };
 
 pub const Options = struct {
-    delimiter: u8 = '\n',
+    input_delimiter: u8 = '\n',
+    output_delimiter: u8 = '\n',
     is_binary_protocol: bool = false,
     is_reverse_order_output: bool = false,
     is_single_entry_input: bool = false,

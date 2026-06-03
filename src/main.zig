@@ -202,7 +202,8 @@ const help =
     \\  -n                Create the database file if it does not exist
     \\  -o                Open in readonly mode (write commands fail)
     \\  -r                Reverse output order for keys, key-values, etc.
-    \\  -0                Use null (\\0) instead of newline as separator
+    \\  -z                Use null (\\0) instead of newline as output separator
+    \\  -Z                Use null (\\0) instead of newline as input separator
     \\  -b                Use binary format (32-bit unsigned little-endian length prefix per token)
     \\  -s                Single entry input mode: treat all input as one value
     \\  -S                Single entry output mode: output without separators
@@ -258,9 +259,18 @@ fn parseOptionsOrArg(
                 return .{ .Help = undefined };
             }
 
-            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, '0')) {
-                if (!options.is_binary_protocol and !options.is_single_entry_input and !options.is_single_entry_output) {
-                    options.delimiter = 0;
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'Z')) {
+                if (!options.is_binary_protocol and !options.is_single_entry_input) {
+                    options.input_delimiter = 0;
+                } else {
+                    std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
+                    return OptionsParsingError.ConflictingOptions;
+                }
+            }
+
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'z')) {
+                if (!options.is_binary_protocol and !options.is_single_entry_output) {
+                    options.output_delimiter = 0;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return OptionsParsingError.ConflictingOptions;
@@ -268,7 +278,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'b')) {
-                if (options.delimiter != 0 and !options.is_single_entry_input and !options.is_single_entry_output) {
+                if (options.input_delimiter != 0 and options.output_delimiter != 0 and !options.is_single_entry_input and !options.is_single_entry_output) {
                     options.is_binary_protocol = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -277,7 +287,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 's')) {
-                if (options.delimiter != 0 and !options.is_binary_protocol) {
+                if (options.input_delimiter != 0 and !options.is_binary_protocol) {
                     options.is_single_entry_input = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -286,7 +296,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'S')) {
-                if (options.delimiter != 0 and !options.is_binary_protocol) {
+                if (options.output_delimiter != 0 and !options.is_binary_protocol) {
                     options.is_single_entry_output = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -321,7 +331,7 @@ fn parseOptionsOrArg(
             }
 
             for (options_arg) |byte| {
-                const valid_flags = "-0bsrnoiS";
+                const valid_flags = "-zZbsrnoiS";
                 const is_valid_flag = std.mem.containsAtLeastScalar(u8, valid_flags, 1, byte);
                 if (!is_valid_flag) {
                     printHelp(io);
@@ -487,7 +497,7 @@ fn processStdinArgs(
         stdin,
         trailing_args_buffer.items,
         .{
-            .delimiter = options.delimiter,
+            .delimiter = options.input_delimiter,
             .is_binary_protocol = options.is_binary_protocol,
             .is_single_entry_input = options.is_single_entry_input,
         },
