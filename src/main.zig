@@ -259,7 +259,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, '0')) {
-                if (!options.is_binary_protocol and !options.is_single_entry_input and !options.is_single_output) {
+                if (!options.is_binary_protocol and !options.is_single_entry_input and !options.is_single_entry_output) {
                     options.delimiter = 0;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -268,7 +268,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'b')) {
-                if (options.delimiter != 0 and !options.is_single_entry_input and !options.is_single_output) {
+                if (options.delimiter != 0 and !options.is_single_entry_input and !options.is_single_entry_output) {
                     options.is_binary_protocol = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -287,7 +287,7 @@ fn parseOptionsOrArg(
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'S')) {
                 if (options.delimiter != 0 and !options.is_binary_protocol) {
-                    options.is_single_output = true;
+                    options.is_single_entry_output = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return OptionsParsingError.ConflictingOptions;
