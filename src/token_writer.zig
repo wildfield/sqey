@@ -6,14 +6,14 @@ pub const Error = error{SizeTooLarge};
 /// Configuration for how tokens are written to stdout.
 pub const TokenWriterOptions = struct {
     delimiter: u8,
-    is_binary_protocol: bool,
+    is_binary_output: bool,
     is_single_entry_output: bool,
     is_reverse_order_output: bool,
 
     pub fn fromArgOptions(options: utils.Options) TokenWriterOptions {
         return .{
             .delimiter = options.output_delimiter,
-            .is_binary_protocol = options.is_binary_protocol,
+            .is_binary_output = options.is_binary_output,
             .is_single_entry_output = options.is_single_entry_output,
             .is_reverse_order_output = options.is_reverse_order_output,
         };
@@ -49,7 +49,7 @@ pub const TokenWriter = struct {
     pub fn printToken(self: *TokenWriter, token: []const u8) !void {
         const writer = &self.stdout_writer.interface;
 
-        if (self.options.is_binary_protocol) {
+        if (self.options.is_binary_output) {
             if (std.math.cast(u32, token.len)) |len| {
                 _ = try writer.writeInt(u32, len, .little);
             } else {
