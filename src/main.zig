@@ -208,7 +208,7 @@ const help =
     \\  -B                Use binary input format (32-bit unsigned little-endian length prefix per token)
     \\  -s                Single entry input mode: treat all input as one value
     \\  -S                Single entry output mode: output without separators
-    \\  -i                Read commands and arguments from stdin. You can pass leading arguments after -i
+    \\  -I                Read commands and arguments from stdin. You can pass leading arguments after -I
     \\  -h/--help         Print help
     \\
 ;
@@ -336,12 +336,12 @@ fn parseOptionsOrArg(
                 }
             }
 
-            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'i')) {
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'I')) {
                 options.is_input_stdin = true;
             }
 
             for (options_arg) |byte| {
-                const valid_flags = "-zZbBsrnoiS";
+                const valid_flags = "-zZbBsrnoIS";
                 const is_valid_flag = std.mem.containsAtLeastScalar(u8, valid_flags, 1, byte);
                 if (!is_valid_flag) {
                     printHelp(io);
