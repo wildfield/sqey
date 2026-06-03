@@ -7,14 +7,14 @@ pub const Error = error{SizeTooLarge};
 pub const TokenWriterOptions = struct {
     delimiter: u8,
     is_binary_protocol: bool,
-    is_single_entry: bool,
+    is_single_entry_output: bool,
     is_reverse_order_output: bool,
 
     pub fn fromArgOptions(options: utils.Options) TokenWriterOptions {
         return .{
             .delimiter = options.delimiter,
             .is_binary_protocol = options.is_binary_protocol,
-            .is_single_entry = options.is_single_entry,
+            .is_single_entry_output = options.is_single_entry_output,
             .is_reverse_order_output = options.is_reverse_order_output,
         };
     }
@@ -56,7 +56,7 @@ pub const TokenWriter = struct {
                 return Error.SizeTooLarge;
             }
             _ = try writer.writeAll(token);
-        } else if (self.options.is_single_entry) {
+        } else if (self.options.is_single_entry_output) {
             _ = try writer.writeAll(token);
         } else {
             _ = try writer.writeAll(token);
