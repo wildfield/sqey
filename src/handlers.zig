@@ -199,7 +199,7 @@ pub const GetHandler = struct {
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
                 try sm.open(filepath, options.allow_create);
-            } else if (options.is_single_input) {
+            } else if (options.is_single_entry_input) {
                 return singleEntryFail();
             }
 
@@ -272,7 +272,7 @@ pub const GetOrElseHandler = struct {
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
                 try sm.open(filepath, options.allow_create);
-            } else if (options.is_single_input) {
+            } else if (options.is_single_entry_input) {
                 return singleEntryFail();
             }
 
@@ -381,7 +381,7 @@ pub const GetOrElseSetHandler = struct {
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
                 try sm.open(filepath, true);
-            } else if (options.is_single_input) {
+            } else if (options.is_single_entry_input) {
                 return singleEntryFail();
             }
 
@@ -464,7 +464,7 @@ pub const SetHandler = struct {
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
                 try sm.open(filepath, true);
-            } else if (options.is_single_input) {
+            } else if (options.is_single_entry_input) {
                 return singleEntryFail();
             }
 
@@ -623,7 +623,7 @@ pub const DeleteHandler = struct {
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
                 try sm.open(filepath, false);
-            } else if (options.is_single_input) {
+            } else if (options.is_single_entry_input) {
                 return singleEntryFail();
             }
 
@@ -691,7 +691,7 @@ pub const DeleteIfExistsHandler = struct {
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
                 try sm.open(filepath, options.allow_create);
-            } else if (options.is_single_input) {
+            } else if (options.is_single_entry_input) {
                 return singleEntryFail();
             }
 
@@ -776,7 +776,7 @@ pub const RenameHandler = struct {
             if (!did_receive_valid_arg) {
                 did_receive_valid_arg = true;
                 try sm.open(filepath, options.allow_create);
-            } else if (options.is_single_input) {
+            } else if (options.is_single_entry_input) {
                 return singleEntryFail();
             }
 
@@ -898,7 +898,7 @@ pub const CompareAndSwapHandler = struct {
                 did_receive_valid_arg = true;
                 try sm.open(filepath, options.allow_create);
                 try self.tx.beginExclusive(sm);
-            } else if (options.is_single_input) {
+            } else if (options.is_single_entry_input) {
                 return singleEntryFail();
             }
 

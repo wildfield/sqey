@@ -259,7 +259,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, '0')) {
-                if (!options.is_binary_protocol and !options.is_single_input and !options.is_single_output) {
+                if (!options.is_binary_protocol and !options.is_single_entry_input and !options.is_single_output) {
                     options.delimiter = 0;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -268,7 +268,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'b')) {
-                if (options.delimiter != 0 and !options.is_single_input and !options.is_single_output) {
+                if (options.delimiter != 0 and !options.is_single_entry_input and !options.is_single_output) {
                     options.is_binary_protocol = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -278,7 +278,7 @@ fn parseOptionsOrArg(
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 's')) {
                 if (options.delimiter != 0 and !options.is_binary_protocol) {
-                    options.is_single_input = true;
+                    options.is_single_entry_input = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return OptionsParsingError.ConflictingOptions;
@@ -489,7 +489,7 @@ fn processStdinArgs(
         .{
             .delimiter = options.delimiter,
             .is_binary_protocol = options.is_binary_protocol,
-            .is_single_input = options.is_single_input,
+            .is_single_input = options.is_single_entry_input,
         },
     );
     defer iterator.deinit();
@@ -534,7 +534,7 @@ pub fn processArgs(
             try handler.run(allocator, args, filepath, database_manager, options);
         },
         .Keys => {
-            if (options.is_single_input) {
+            if (options.is_single_entry_input) {
                 std.log.err("Key operations are not allowed with single entry flag", .{});
                 return ProcessArgsError.GeneralError;
             }
@@ -548,7 +548,7 @@ pub fn processArgs(
             try KeysHandler.run(database_manager, writer);
         },
         .KeyValues => {
-            if (options.is_single_input) {
+            if (options.is_single_entry_input) {
                 std.log.err("Key operations are not allowed with single entry flag", .{});
                 return ProcessArgsError.GeneralError;
             }
@@ -562,7 +562,7 @@ pub fn processArgs(
             try KeyValuesHandler.run(database_manager, writer);
         },
         .KeysLike => {
-            if (options.is_single_input) {
+            if (options.is_single_entry_input) {
                 std.log.err("Key operations are not allowed with single entry flag", .{});
                 return ProcessArgsError.GeneralError;
             }
