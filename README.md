@@ -76,7 +76,8 @@ All commands that accept keys or key-value pairs can accept more than one in a s
 | `-r` | Reverse output order for `keys`, `key-values`, etc. |
 | `-0` | Use null (`\0`) instead of newline as separator (input and output) |
 | `-b` | Use binary format (unsigned 32-bit little-endian length prefix per token) for input/output |
-| `-s` | Single entry mode: treat all input as one value; output as a single value without separators |
+| `-s` | Single input mode: treat all input as one value |
+| `-S` | Single output mode: output without separators |
 | `-i` | Read commands and arguments from stdin instead of CLI. You can pass leading arguments after `-i` |
 | `-h` / `--help` | Print help |
 

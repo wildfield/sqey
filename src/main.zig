@@ -68,14 +68,14 @@ const StdinIteratorError = error{
 const StdinIteratorOptions = struct {
     delimiter: u8,
     is_binary_protocol: bool,
-    is_single_entry: bool,
+    is_single_input: bool,
 };
 
 const StdinIterator = struct {
     reader: *std.Io.Reader,
     delimiter: u8,
     is_binary_protocol: bool,
-    is_single_entry: bool,
+    is_single_input: bool,
     is_done: bool = false,
     leftover_args: []const []const u8,
     leftover_args_read_count: usize = 0,
@@ -88,7 +88,7 @@ const StdinIterator = struct {
             .reader = reader,
             .delimiter = options.delimiter,
             .is_binary_protocol = options.is_binary_protocol,
-            .is_single_entry = options.is_single_entry,
+            .is_single_input = options.is_single_input,
             .leftover_args = leftover_args,
             .input_writer = input_writer,
         };
@@ -135,7 +135,7 @@ const StdinIterator = struct {
                     }
                 }
             }
-        } else if (self.is_single_entry) {
+        } else if (self.is_single_input) {
             if (self.is_done) return null;
             self.input_writer.clearRetainingCapacity();
 
@@ -204,7 +204,8 @@ const help =
     \\  -r                Reverse output order for keys, key-values, etc.
     \\  -0                Use null (\\0) instead of newline as separator
     \\  -b                Use binary format (32-bit unsigned little-endian length prefix per token)
-    \\  -s                Single entry mode: treat all input as one value
+    \\  -s                Single input mode: treat all input as one value
+    \\  -S                Single output mode: output without separators
     \\  -i                Read commands and arguments from stdin. You can pass leading arguments after -i
     \\  -h/--help         Print help
     \\
@@ -258,7 +259,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, '0')) {
-                if (!options.is_binary_protocol and !options.is_single_entry) {
+                if (!options.is_binary_protocol and !options.is_single_input and !options.is_single_output) {
                     options.delimiter = 0;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -267,7 +268,7 @@ fn parseOptionsOrArg(
             }
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'b')) {
-                if (options.delimiter != 0 and !options.is_single_entry) {
+                if (options.delimiter != 0 and !options.is_single_input and !options.is_single_output) {
                     options.is_binary_protocol = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
@@ -277,7 +278,16 @@ fn parseOptionsOrArg(
 
             if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 's')) {
                 if (options.delimiter != 0 and !options.is_binary_protocol) {
-                    options.is_single_entry = true;
+                    options.is_single_input = true;
+                } else {
+                    std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
+                    return OptionsParsingError.ConflictingOptions;
+                }
+            }
+
+            if (std.mem.containsAtLeastScalar(u8, options_arg, 1, 'S')) {
+                if (options.delimiter != 0 and !options.is_binary_protocol) {
+                    options.is_single_output = true;
                 } else {
                     std.log.err("Binary protocol, null terminator and single entry are mutually exclusive", .{});
                     return OptionsParsingError.ConflictingOptions;
@@ -311,7 +321,7 @@ fn parseOptionsOrArg(
             }
 
             for (options_arg) |byte| {
-                const valid_flags = "-0bsrnoi";
+                const valid_flags = "-0bsrnoiS";
                 const is_valid_flag = std.mem.containsAtLeastScalar(u8, valid_flags, 1, byte);
                 if (!is_valid_flag) {
                     printHelp(io);
@@ -479,7 +489,7 @@ fn processStdinArgs(
         .{
             .delimiter = options.delimiter,
             .is_binary_protocol = options.is_binary_protocol,
-            .is_single_entry = options.is_single_entry,
+            .is_single_input = options.is_single_input,
         },
     );
     defer iterator.deinit();
@@ -524,7 +534,7 @@ pub fn processArgs(
             try handler.run(allocator, args, filepath, database_manager, options);
         },
         .Keys => {
-            if (options.is_single_entry) {
+            if (options.is_single_input) {
                 std.log.err("Key operations are not allowed with single entry flag", .{});
                 return ProcessArgsError.GeneralError;
             }
@@ -538,7 +548,7 @@ pub fn processArgs(
             try KeysHandler.run(database_manager, writer);
         },
         .KeyValues => {
-            if (options.is_single_entry) {
+            if (options.is_single_input) {
                 std.log.err("Key operations are not allowed with single entry flag", .{});
                 return ProcessArgsError.GeneralError;
             }
@@ -552,7 +562,7 @@ pub fn processArgs(
             try KeyValuesHandler.run(database_manager, writer);
         },
         .KeysLike => {
-            if (options.is_single_entry) {
+            if (options.is_single_input) {
                 std.log.err("Key operations are not allowed with single entry flag", .{});
                 return ProcessArgsError.GeneralError;
             }
