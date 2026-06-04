@@ -71,15 +71,15 @@ All commands that accept keys or key-value pairs can accept more than one in a s
 
 | Option | Description |
 |---|---|
-| `-n` | Create the database file if it does not exist. `set` and `get-or-else-set` default to true |
+| `-n` | Create the database file if it does not exist (`set` and `get-or-else-set` default to true) |
 | `-o` | Open in readonly mode (write commands fail) |
 | `-r` | Reverse output order for `keys`, `key-values`, etc. |
 | `-z` | Use null (`\0`) instead of newline as output separator |
-| `-Z` | Use null (`\0`) instead of newline as input separator (enables stdin) |
-| `-b` | Use binary format (unsigned 32-bit little-endian length prefix per token) for output |
-| `-B` | Use binary format (unsigned 32-bit little-endian length prefix per token) for input (enables stdin) |
+| `-Z` | Use null (`\0`) instead of newline as input delimiter (uses stdin) |
+| `-b` | Use binary output format (32-bit unsigned little-endian length prefix per token) |
+| `-B` | Use binary input format (32-bit unsigned little-endian length prefix per token, uses stdin) |
 | `-s` | Single entry output mode: output without separators |
-| `-S` | Single entry input mode: treat all input as one value (enables stdin) |
+| `-S` | Single entry input mode: treat all input as one value (uses stdin) |
 | `-I` | Read commands and arguments from stdin (uses `\n` delimiter). Mutually exclusive with `-Z`/`-B`/`-S` |
 | `-h` / `--help` | Print help |
 

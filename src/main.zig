@@ -199,16 +199,16 @@ const help =
     \\  compare-and-swap   Compare and swap multiple key-value pairs
     \\
     \\Options:
-    \\  -n                Create the database file if it does not exist
+    \\  -n                Create the database file if it does not exist (`set` and `get-or-else-set` default to true)
     \\  -o                Open in readonly mode (write commands fail)
     \\  -r                Reverse output order for keys, key-values, etc.
-    \\  -z                Use null (\\0) instead of newline as output separator (not stdin)
-    \\  -Z                Use null (\\0) instead of newline as input separator (enables stdin)
+    \\  -I                Read commands and arguments from stdin (uses \n delimiter). Mutually exclusive with -Z/-B/-S
+    \\  -z                Use null (\0) instead of newline as output delimiter
+    \\  -Z                Use null (\0) instead of newline as input delimiter (uses stdin)
     \\  -b                Use binary output format (32-bit unsigned little-endian length prefix per token)
-    \\  -B                Use binary input format (32-bit unsigned little-endian length prefix per token, enables stdin)
-    \\  -S                Single entry input mode: treat all input as one value (enables stdin)
+    \\  -B                Use binary input format (32-bit unsigned little-endian length prefix per token, uses stdin)
     \\  -s                Single entry output mode: output without separators
-    \\  -I                Read commands and arguments from stdin (uses \\n delimiter). Mutually exclusive with -Z/-B/-S
+    \\  -S                Single entry input mode: treat all input as one value (uses stdin)
     \\  -h/--help         Print help
     \\
 ;
